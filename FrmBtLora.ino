@@ -1,5 +1,4 @@
 /*
-/*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
 */
 #include <SPI.h>              // include libraries
