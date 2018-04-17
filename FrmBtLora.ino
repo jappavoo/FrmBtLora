@@ -1,8 +1,6 @@
 /*
-  LoRa register dump
-
-  This examples shows how to inspect and output the LoRa radio's
-  registers on the Serial interface
+/*
+  FarmBeats LoRa Arduino Code for Indian Sensor Box
 */
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
