@@ -1,6 +1,30 @@
 /*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
+   
+  Known Issues:
+     1)  See FIXME in LoraModule::stop()
+           I still see power on the LoRa Module after calling stop.
+           Prior to starting the SPI the power tests works.
+           However, after using SPI (eg. calling start()) asserting pin 16 high does
+           cause R6 and the LORA_BJT to see the right value  but the VCC pin of the 
+           LoRa stays high :-(
+
+     2)  Need to optimize space, performance and power consumption
+         I have only done some basic things keep footprint small.  
+          eg. When DEBUG is commented out most of the debug code and data 
+              overheads should be eliminated but not all. This needs to be 
+              confirmed and likely improved.
+
+     3)  No Duty cycle logic.
+           See txDelay():  right now sender buffers data from an input
+           stream and sends it based on a based delay and random delay
+           since the last send.
+           default values are based delay of 1 second with random delay
+           of 2 seconds.  So next send window will be between 1 to 3 
+           seconds after the last send (assuming there is data to send).
+
 */
+
 #include <SPI.h>              // include libraries
 #include <EEPROM.h>
 #include <LoRa.h>
@@ -19,6 +43,7 @@
 
 #define DUMP_RX_PACKET true
 #define DUMP_TX_PACKET true
+
 
 #ifndef DEBUG
 
@@ -107,8 +132,11 @@ namespace FarmBeats {
   // based on this document
   // https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
   // default frequency to use in india is IN865-867
-  const long LORA_FREQ = 868E6;
+  const long LORA_FREQ                 = 868E6;
+  const int  LORA_RANDOM_SEND_DELAY_MS = 2000;
+  const int  LORAY_BASE_SEND_DELAY_MS  = 1000;
 
+  
   class Id {
     const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
     const uint32_t NULLID = -1;
@@ -160,15 +188,19 @@ namespace FarmBeats {
   
   class LoraModule {
   private:
-    const long     freq_         = LORA_FREQ;
-    const int      pwrDisable_   = LORA_R_PWR_DISABLE;
-    const int      reset_        = LORA_L_NRESET;
-    const int      ss_           = LORA_L_SS;
-    const int      dio0_         = LORA_R_DI00;
+    const long     freq_            = LORA_FREQ;
+    const int      pwrDisable_      = LORA_R_PWR_DISABLE;
+    const int      reset_           = LORA_L_NRESET;
+    const int      ss_              = LORA_L_SS;
+    const int      dio0_            = LORA_R_DI00;
+    const int      baseSendDelay_   = LORAY_BASE_SEND_DELAY_MS;
+    const int      randomSendDelay_ = LORA_RANDOM_SEND_DELAY_MS;
 
+    
     class StreamBuffer {
-      const int len_ = 80;
-      byte buf_[80];      // can't use const member yet :-(
+#define INPUT_STREAM_BUFFER_SIZE 20
+      const int len_ = INPUT_STREAM_BUFFER_SIZE;
+      byte buf_[INPUT_STREAM_BUFFER_SIZE];      // can't use const member yet :-(
       int  end_;
     public:
       StreamBuffer() : end_(0) {}
@@ -233,6 +265,12 @@ namespace FarmBeats {
       
       return cnt;
     }
+
+    // FIXME: JA harded coded delay eventually should be adapted to
+    // correct duty cycle logic
+    unsigned long txDelay() {
+      return baseSendDelay_ + random(randomSendDelay_);
+    }
     
   public:
     
@@ -258,7 +296,7 @@ namespace FarmBeats {
       enablePower();
       sleep(); // give module time to warm up???
       lastTx_ = 0;
-      nextTxAfter_ = 2000;
+      nextTxAfter_ = txDelay();
       
       return LoRa.begin(freq_);
     }
@@ -276,7 +314,7 @@ namespace FarmBeats {
 	
 	txCnt_      += sentCnt;
 	lastTx_      = millis();
-	nextTxAfter_ = random(2000) + 1000;
+	nextTxAfter_ = txDelay();
 	
 	if (dumpPacket) {
 	  ds.print(myIdStr_ + ":>\n\t");
@@ -310,13 +348,20 @@ namespace FarmBeats {
 	
       // send stream data when and as necessary
       if ((millis() - lastTx_) > nextTxAfter_) {
-        // time to send
+        // time to send any buffered data
         sendStreamBuf(s);
       }
-      
+
+      // poll and process any data on LoRa
       onReceive(LoRa.parsePacket(),s);
     }
-    
+
+    // FIXME: JA: SOMETHING IS WRONG.
+    //            I still see power on the LoRa Module after calling stop.
+    //            Prior to starting the SPI the power tests works.
+    //            However, after using SPI asserting pin 16 high does
+    //            does cause R6 and the LORA_BJT to see the right value
+    //            but the VCC pin of the LoRa stays high :-(
     void stop() {
       // Initializes the SPI bus by setting SCK, MOSI, and SS to outputs,
       // pulling SCK and MOSI low, and SS high.
