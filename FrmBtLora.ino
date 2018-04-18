@@ -2,24 +2,37 @@
   FarmBeats LoRa Arduino Code for Indian Sensor Box
 */
 #include <SPI.h>              // include libraries
+#include <EEPROM.h>
 #include <LoRa.h>
 
-#define MYID 0x00000001
-//#define MYID 0x00000002
+// uncomment next line to turn on debug (see below for how to customize
+// the debug behaviour
+// #define DEBUG
+
+// set next line to true to reset EEPROM id back to null (-1)
+#define EEPROM_RESET_ID false
+
+// if eeprom id is null (-1) then we set the id the following value
+//  get this value from somewhere else ;-)
+//#define MYID 0x00000001
+#define MYID 0x00000002
 
 #define DUMP_RX_PACKET true
 #define DUMP_TX_PACKET true
 
-//#define DEBUG 1
-
 #ifndef DEBUG
+
 #define waitForKey(...)
-#else 
+
+#else
+
 // DEBUG SETTING
-#define WAIT false
+// use the following to customize debug behaviour
+#define WAIT true
 #define MSG  true
-#define LORA_POWER_TEST 1
-#define LORA_DUMP_REGISTERS 1
+#define LORA_POWER_TEST 
+#define LORA_DUMP_REGISTERS 
+#define DUMP_EEPROM 
 
 void waitForKey(Stream &s, String str, bool msg=MSG, bool wait=WAIT)
 {
@@ -29,8 +42,10 @@ void waitForKey(Stream &s, String str, bool msg=MSG, bool wait=WAIT)
     while (s.available()) s.read();
   }
 }
+
 #endif
 
+/************** CODE FOLLOWS ****************/
   
 namespace FarmBeats {
 
@@ -93,24 +108,104 @@ namespace FarmBeats {
   // https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
   // default frequency to use in india is IN865-867
   const long LORA_FREQ = 868E6;
+
+  class Id {
+    const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
+    const uint32_t NULLID = -1;
+    uint32_t id_;
+
+    unsigned int eeoffset() { return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END; }
+    
+    void setEEPromId(uint32_t val) {
+      EEPROM.put(eeoffset(), val);
+    }
+    
+    uint32_t getEEPromId() {
+      uint32_t val;
+      EEPROM.get(eeoffset(),val);
+      return val;
+    }
+
+  public:
+    Id() {
+      if (EEPROM_RESET_ID) resetId();
+      id_ = getEEPromId();
+      if (isNull()) setEEPromId(MYID);
+      id_ = getEEPromId();      
+    }
+    
+    uint32_t value() { return id_; }
+    
+    void resetId() {
+      setEEPromId(NULLID);
+    }
+    
+    bool isNull() { return id_ == NULLID; }
+    
+#ifdef DUMP_EEPROM
+    static void dumpEEProm(Stream &s) {
+      unsigned int len=EEPROM.length();
+      s.println("Id::dumpEEProm(): len=" + String(len));
+      for (unsigned int i=0; i<len; i+=16) {
+	s.print(String(i,HEX) + ":\t");
+	for (int j=0; j<16; j++) {
+	  s.print(EEPROM.read(i+j),HEX);
+	  s.print(" ");
+	}
+	s.println();
+      }
+    }
+#endif
+  };
   
   class LoraModule {
   private:
-    const int32_t  myId_         = MYID;
-    const String   myIdStr_      = String(MYID);
     const long     freq_         = LORA_FREQ;
     const int      pwrDisable_   = LORA_R_PWR_DISABLE;
     const int      reset_        = LORA_L_NRESET;
     const int      ss_           = LORA_L_SS;
     const int      dio0_         = LORA_R_DI00;
 
-    bool pwr_;
-    unsigned char spcrIntialValue_;
+    class StreamBuffer {
+      const int len_ = 80;
+      byte buf_[80];      // can't use const member yet :-(
+      int  end_;
+    public:
+      StreamBuffer() : end_(0) {}
+      
+      void reset()     { end_=0; }      
+      int  spaceLeft() { return len_ - end_; }
+      int  dataLen()   { return end_; }
+      bool isFull()    { return end_ == len_; }
+      bool isEmpty()   { return end_ == 0; }
+
+      // if there is data on the stream copies into buffer space
+      // aviable.  May leave data on stream if not enough space
+      int buffer(Stream &s) {
+        int copy=0;
+	int len = s.available();
+	int space = spaceLeft();
+	
+	if (len && space) {
+	  if (space >= len) copy = len; else copy = space;
+	  s.readBytes(&buf_[end_], copy);
+	  end_ += copy;
+	}
+	return copy;
+      }
+      byte *data() { return buf_; }
+      
+    } streamBuf_;
+    
+    String    myIdStr_;
+    uint32_t  myId_;
     unsigned long lastTx_;
     unsigned long nextTxAfter_;
     int txCnt_;
     int rxCnt_;
-    
+    unsigned char spcrIntialValue_;
+    bool pwr_;
+
     void sleep() { delay(100); }
     
     void disablePower() {
@@ -124,9 +219,28 @@ namespace FarmBeats {
       digitalWrite(pwrDisable_, LOW);
       pwr_ = true;
     }
+
+    // adds header info : just using ascii format for the moment
+    // format: <id>,<len>,<data>
+    int copyDataToStream(Stream &s, byte *data, int dataLen) {
+      int cnt;
+      
+      cnt  = s.print(myIdStr_);
+      cnt += s.print(",");
+      cnt += s.print(dataLen);
+      cnt += s.print(",");
+      cnt += s.write(data, dataLen);
+      
+      return cnt;
+    }
+    
   public:
+    
     LoraModule() {}
 
+    void setId(uint32_t id) { myId_ = id; myIdStr_ = String(id,HEX); }
+    uint32_t getId() { return myId_; }
+    
     void info(Stream &s) {
       s.println("LoraModule():");
       s.println("\tmyId_: " + String(myId_) + " myIdStr_: " + myIdStr_);
@@ -145,9 +259,34 @@ namespace FarmBeats {
       sleep(); // give module time to warm up???
       lastTx_ = 0;
       nextTxAfter_ = 2000;
+      
       return LoRa.begin(freq_);
     }
-
+    
+    void sendStreamBuf(Stream &ds, bool dumpPacket=DUMP_TX_PACKET) {
+      int dataLen = streamBuf_.dataLen();
+      byte *data  = streamBuf_.data();
+      
+      if (dataLen) {
+	// we have data to send
+	int sentCnt;
+	LoRa.beginPacket();
+	sentCnt = copyDataToStream(LoRa, data, dataLen);
+	LoRa.endPacket();
+	
+	txCnt_      += sentCnt;
+	lastTx_      = millis();
+	nextTxAfter_ = random(2000) + 1000;
+	
+	if (dumpPacket) {
+	  ds.print(myIdStr_ + ":>\n\t");
+	  copyDataToStream(ds, data, dataLen);
+	  ds.println("\tsentCnt:" + String(sentCnt) + " txCnt_: " + String(txCnt_));
+	}
+	streamBuf_.reset();
+      }
+    }
+	      
     void onReceive(int packetSize, Stream &s, bool dumpPacket=DUMP_RX_PACKET) {
       if (packetSize == 0) return;
       String inStr = "";
@@ -165,25 +304,16 @@ namespace FarmBeats {
       }
     }
     
-    void loopAction(Stream &s, bool dumpPacket=DUMP_TX_PACKET) {
-      int cnt=0;
-      String outStr ="id:" + myIdStr_ + " : Hello: "; 
-      if ((millis() - lastTx_) > nextTxAfter_) {
-	// send packet	
-	LoRa.beginPacket();
-	cnt += LoRa.print(outStr);
-	cnt += LoRa.print(txCnt_);
-	LoRa.endPacket();
-	txCnt_ += cnt;
-	lastTx_ = millis();
-	nextTxAfter_  = random(2000) + 1000;
+    void loopAction(Stream &s) {
+      // local input stream processing
+      streamBuf_.buffer(s);
 	
-	if (dumpPacket) {
-	  s.print(myIdStr_ + ":>\n\t");
-	  s.println(outStr);
-	  s.println("\ttxCnt_: " + String(txCnt_));
-	}
+      // send stream data when and as necessary
+      if ((millis() - lastTx_) > nextTxAfter_) {
+        // time to send
+        sendStreamBuf(s);
       }
+      
       onReceive(LoRa.parsePacket(),s);
     }
     
@@ -218,6 +348,8 @@ namespace FarmBeats {
 
     bool isOn() { return pwr_; }
 
+
+#ifdef LORA_POWER_TEST
     void testPower(Stream &s) {
       // test power disable
       s.println("testPower(): BEGIN");
@@ -252,10 +384,12 @@ namespace FarmBeats {
       
       s.println("testPower(): END");
     }
+#endif
  };
 }
 
 
+FarmBeats::Id id;
 FarmBeats::LoraModule lm;
 
 void setup() {
@@ -264,6 +398,12 @@ void setup() {
 
   waitForKey(Serial, "setup(): BEGIN: Send key to continue");
 
+#ifdef DUMP_EEPROM
+  FarmBeats::Id::dumpEEProm(Serial);
+  waitForKey(Serial, "EEProm dump done");
+ #endif
+
+  lm.setId(id.value());
   lm.info(Serial);
   
 #ifdef LORA_POWER_TEST
