@@ -29,6 +29,8 @@
 #include <EEPROM.h>
 #include <LoRa.h>
 
+#define VERSION "$Id$"
+
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
 // #define DEBUG
@@ -319,7 +321,7 @@ namespace FarmBeats {
 	if (dumpPacket) {
 	  ds.print(myIdStr_ + ":>\n\t");
 	  copyDataToStream(ds, data, dataLen);
-	  ds.println("\tsentCnt:" + String(sentCnt) + " txCnt_: " + String(txCnt_));
+	  ds.println("\n\tsentCnt:" + String(sentCnt) + " txCnt_: " + String(txCnt_));
 	}
 	streamBuf_.reset();
       }
