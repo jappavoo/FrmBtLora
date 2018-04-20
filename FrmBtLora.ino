@@ -1,6 +1,8 @@
 /*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
-   
+  /*  NOTE THE MDOT uses sx1272 which is different from the sx1278 that the Indian Farm 
+      Beats sensor box uses */
+
   Known Issues:
      1)  See FIXME in LoraModule::stop()
            I still see power on the LoRa Module after calling stop.
@@ -14,6 +16,11 @@
           eg. When DEBUG is commented out most of the debug code and data 
               overheads should be eliminated but not all. This needs to be 
               confirmed and likely improved.
+
+         Having read the RFM95/96/97/98(W) manual there are many things we could
+         do to optimize the performance and power by carefully customizing things to
+         our environment.  
+         Not sure it is worth this includes potentially using implicity header mode
 
      3)  No Duty cycle logic.
            See txDelay():  right now sender buffers data from an input
@@ -110,7 +117,8 @@ namespace FarmBeats {
     MCU_PIN27_PC4 = A4,
     MCU_PIN28_PC5 = A5    
   };
-  
+
+  // Map of sensor box pin assignments.
   enum ATMEGA328_PIN_ASSIGNMENTS {
     // NOT WE MUST USE ATMEGA328 SPECIFIC
     // PIN NAMES NOT THE STANDARD ARDUINO BOARD PIN NAMES
@@ -131,10 +139,41 @@ namespace FarmBeats {
     // LORA_R_DI04=NOT_CONNECTED,
     // LORA_R_DI03=NOT_CONNECTED
   };
-  // based on this document
-  // https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
-  // default frequency to use in india is IN865-867
+  
+
+  class LoRaClass : public ::LoRaClass {
+  public:
+    unsigned char read_reg(uint8_t addr) { return readRegister(addr); }
+  } theLoRa;
+
+
+  
+  // Default communication parameters
+  //   based on this document
+  //   https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
+  //   default frequency to use in india is IN865-867 but we seem to be using
+  //   868.0
   const long LORA_FREQ                 = 868E6;
+  const long LORA_BANDWIDTH            = 125E3;  
+  const int  LORA_SPREADING_FACTOR     = 7;
+  const int  LORA_TX_POWER_LEVEL       = 17;
+  const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
+  const long LORA_PREAMBLE_LENGTH      = 8;
+  const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12
+  const bool LORA_CRC                  = false;
+  // By default we operate in explicit header mode:
+  // The packets include a hardware generated header
+  // See page 26 of RFM95/96/97/98(W) manual for details. Brief summary is below
+  const bool LORA_IMPLICIT_HEADER_MODE = false;
+
+  // Explicity mode packet structure is as follows:
+  // <preamble> <header,headr_crc> <payload> [16 bit payload_crc]
+  // header: <payload len> <fwd error correcton code rate> <yes/no payload_crc present>
+  // error correcton code rate for header is 4/8
+  // as indicated the payload code rate is specified in the header
+  
+  // Default send timing parameters
+  
   const int  LORA_RANDOM_SEND_DELAY_MS = 2000;
   const int  LORAY_BASE_SEND_DELAY_MS  = 1000;
 
@@ -190,13 +229,27 @@ namespace FarmBeats {
   
   class LoraModule {
   private:
-    const long     freq_            = LORA_FREQ;
-    const int      pwrDisable_      = LORA_R_PWR_DISABLE;
-    const int      reset_           = LORA_L_NRESET;
-    const int      ss_              = LORA_L_SS;
-    const int      dio0_            = LORA_R_DI00;
-    const int      baseSendDelay_   = LORAY_BASE_SEND_DELAY_MS;
-    const int      randomSendDelay_ = LORA_RANDOM_SEND_DELAY_MS;
+    // radio configuration parameters
+    const long     freq_               = LORA_FREQ;
+    const long     bandwidth_          = LORA_BANDWIDTH;
+    const int      spreadingFactor_    = LORA_SPREADING_FACTOR;
+    const int      txPower_            = LORA_TX_POWER_LEVEL;
+    const int      codingRateDenom_    = LORA_CODING_RATE_DENOM;
+    const long     preambleLength_     = LORA_PREAMBLE_LENGTH;
+    const int      syncWord_           = LORA_SYNC_WORD;
+    const bool     crc_                = LORA_CRC;
+    const bool     implicitHeaderMode_ = LORA_IMPLICIT_HEADER_MODE; 
+
+    // pin/wiring parameters
+    const int      pwrDisable_         = LORA_R_PWR_DISABLE;
+    const int      reset_              = LORA_L_NRESET;
+    const int      ss_                 = LORA_L_SS;
+    const int      dio0_               = LORA_R_DI00;
+
+    // send timing parameters
+    const int      baseSendDelay_      = LORAY_BASE_SEND_DELAY_MS;
+    const int      randomSendDelay_    = LORA_RANDOM_SEND_DELAY_MS;
+
 
     
     class StreamBuffer {
@@ -288,8 +341,30 @@ namespace FarmBeats {
       s.print(" reset_="); s.print(reset_, DEC);
       s.print(" ss_="); s.print(ss_, DEC);
       s.print(" dio0_="); s.print(dio0_, DEC);
-      s.print("\n\tCONSTANTS: freq_=");
-      s.println(freq_, DEC);
+      s.print("\n\tRADIO: ");
+      s.print("\n\t\tversion=" + String(theLoRa.read_reg(0x42),HEX));
+      s.print("\n\t\tRegOpMode=" + String(theLoRa.read_reg(0x01),HEX));
+      s.print("\n\t\tfreq_=" + String(freq_, DEC) + " reg=" +
+	      String(((uint32_t)theLoRa.read_reg(0x6)) << 16 |
+		     ((uint32_t)theLoRa.read_reg(0x7)) <<  8 |
+		     ((uint32_t)theLoRa.read_reg(0x8))       , DEC));
+      s.print("\n\t\tbandwidth_=" + String(bandwidth_, DEC) + " reg=" +
+	      String(((theLoRa.read_reg(0x1d)>>4)&0xf),DEC));
+      s.print("\n\t\tspreadingFactor_=" + String(spreadingFactor_, DEC) + " reg=" +
+	      String((theLoRa.read_reg(0x1e)>>4)&0xf,DEC));
+      s.print("\n\t\ttxPower_=" + String(txPower_, DEC) + " REG_PA_CONFIG=" +
+	      String(theLoRa.read_reg(0x09),HEX));
+      s.print("\n\t\tLNA=" + String(theLoRa.read_reg(0x0c),HEX));
+      s.print("\n\t\tcodingRateDenom_=" + String(codingRateDenom_, DEC) + " reg=" +
+	      String((theLoRa.read_reg(0x1d) >> 1) & 0x3,DEC));
+      s.print("\n\t\tpreambleLength_=" + String(preambleLength_, DEC) + " reg=" +
+	      String(theLoRa.read_reg(0x20) << 8 | theLoRa.read_reg(0x21)));
+      s.print("\n\t\tsyncWord_=" + String(syncWord_,HEX) + " reg=" +
+	      String(theLoRa.read_reg(0x39),HEX));
+      s.print("\n\t\tcrc_=" + String(crc_) + " reg=" +
+	      String((theLoRa.read_reg(0x1e)>>2)&0x1));
+      s.println("\n\t\timplicitHeaderMode=" + String(implicitHeaderMode_) + " reg=" +
+		String(theLoRa.read_reg(0x1d)&0x1));
     }
     
     int start() {
@@ -299,8 +374,20 @@ namespace FarmBeats {
       sleep(); // give module time to warm up???
       lastTx_ = 0;
       nextTxAfter_ = txDelay();
-      
-      return LoRa.begin(freq_);
+      int rc = theLoRa.begin(freq_);
+      if (rc) {
+	// FIXME: JA probably only need to do this once unless changing
+	// setup up the radio parameters;
+	theLoRa.setTxPower(txPower_);
+	theLoRa.setSpreadingFactor(spreadingFactor_);
+	theLoRa.setSignalBandwidth(bandwidth_);
+	theLoRa.setCodingRate4(codingRateDenom_);
+	theLoRa.setPreambleLength(preambleLength_);
+	theLoRa.setSyncWord(syncWord_);
+	if (crc_) theLoRa.enableCrc(); else theLoRa.disableCrc();
+	info(Serial);
+      }
+      return rc;
     }
     
     void sendStreamBuf(Stream &ds, bool dumpPacket=DUMP_TX_PACKET) {
@@ -310,9 +397,9 @@ namespace FarmBeats {
       if (dataLen) {
 	// we have data to send
 	int sentCnt;
-	LoRa.beginPacket();
-	sentCnt = copyDataToStream(LoRa, data, dataLen);
-	LoRa.endPacket();
+	theLoRa.beginPacket(implicitHeaderMode_);
+	sentCnt = copyDataToStream(theLoRa, data, dataLen);
+	theLoRa.endPacket();
 	
 	txCnt_      += sentCnt;
 	lastTx_      = millis();
@@ -331,15 +418,15 @@ namespace FarmBeats {
       if (packetSize == 0) return;
       String inStr = "";
 
-      while (LoRa.available()) {
-	inStr += (char)LoRa.read();
+      while (theLoRa.available()) {
+	inStr += (char)theLoRa.read();
       }
       rxCnt_ +=  inStr.length();
       if (dumpPacket) {
         s.print(myIdStr_ + ":<\n\t");
 	s.println(inStr);
-        s.println("\tRSSI: " + String(LoRa.packetRssi()));
-        s.println("\tSnr: " + String(LoRa.packetSnr()));
+        s.println("\tRSSI: " + String(theLoRa.packetRssi()));
+        s.println("\tSnr: " + String(theLoRa.packetSnr()));
         s.println("\trxCnt_: " + String(rxCnt_));
       }
     }
@@ -354,8 +441,8 @@ namespace FarmBeats {
         sendStreamBuf(s);
       }
 
-      // poll and process any data on LoRa
-      onReceive(LoRa.parsePacket(),s);
+      // poll and process any data on theLoRa
+      onReceive(theLoRa.parsePacket(),s);
     }
 
     // FIXME: JA: SOMETHING IS WRONG.
@@ -367,7 +454,7 @@ namespace FarmBeats {
     void stop() {
       // Initializes the SPI bus by setting SCK, MOSI, and SS to outputs,
       // pulling SCK and MOSI low, and SS high.
-      LoRa.end();
+      theLoRa.end();
       
       SPI.end();
 
@@ -381,7 +468,7 @@ namespace FarmBeats {
     }
     
     void status(Stream &out) {
-      LoRa.dumpRegisters(out);
+      theLoRa.dumpRegisters(out);
     }
 
     void setup() {
@@ -390,7 +477,7 @@ namespace FarmBeats {
       rxCnt_ = 0;
       pinMode(pwrDisable_, OUTPUT);
       disablePower();
-      LoRa.setPins(ss_, reset_, dio0_); 
+      theLoRa.setPins(ss_, reset_, dio0_); 
     }
 
     bool isOn() { return pwr_; }
@@ -443,6 +530,8 @@ void setup() {
   Serial.begin(9600); // initialize serial
   while (!Serial);
 
+  Serial.println("FrmBtLora version: " + String(VERSION));
+  
   waitForKey(Serial, "setup(): BEGIN: Send key to continue");
 
 #ifdef DUMP_EEPROM
@@ -451,7 +540,7 @@ void setup() {
  #endif
 
   lm.setId(id.value());
-  lm.info(Serial);
+
   
 #ifdef LORA_POWER_TEST
   lm.testPower(Serial);
