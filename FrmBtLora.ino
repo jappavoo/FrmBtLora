@@ -1,9 +1,12 @@
 /*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
-  /*  NOTE THE MDOT uses sx1272 which is different from the sx1278 that the Indian Farm 
-      Beats sensor box uses */
+
+  NOTE THE MDOT uses sx1272 which is different from the sx1278 that the Indian Farm 
+      Beats sensor box uses 
 
   Known Issues:
+     0)  Hardware CRC not working needs debugging
+     
      1)  See FIXME in LoraModule::stop()
            I still see power on the LoRa Module after calling stop.
            Prior to starting the SPI the power tests works.
