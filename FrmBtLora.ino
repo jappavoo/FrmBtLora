@@ -8,15 +8,12 @@
       Beats sensor box uses 
 
   Known Issues:
-    -1)  I have included a submodule checkout of the official semtech sx1276 code
+     0)  I have included a submodule checkout of the official semtech sx1276 code
          However I am only using it for the register headerfile.  This code
          provides a wealth of knowledge on how to properly configure and use the radio.
          One should carefully consider adopting its best practices for settup the
          radio in context of the FarmBeats depolyment scenario.  I have not done this!
 
-     0)  CRC works between sensor boxes but need to confirm functionality between mdot 
-         and sensor boxs
-     
      1)  See FIXME in LoraModule::stop()
            I still see power on the LoRa Module after calling stop.
            Prior to starting the SPI the power tests works.
@@ -293,8 +290,8 @@ namespace FarmBeats {
 
   
   class Id {
-    const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
-    const uint32_t NULLID = -1;
+    static const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
+    static const uint32_t NULLID = -1;
     uint32_t id_;
 
     unsigned int eeoffset() { return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END; }
@@ -329,11 +326,11 @@ namespace FarmBeats {
     static void dumpEEProm(Stream &s) {
       unsigned int len=EEPROM.length();
       s.println("Id::dumpEEProm(): len=" + String(len));
-      for (unsigned int i=0; i<len; i+=16) {
+      for (unsigned int i=0; i<len; i+=16) { 
 	s.print(String(i,HEX) + ":\t");
 	for (int j=0; j<16; j++) {
 	  s.print(EEPROM.read(i+j),HEX);
-	  s.print(" ");
+	  s.print(" ");  
 	}
 	s.println();
       }
@@ -355,10 +352,10 @@ namespace FarmBeats {
     const bool     implicitHeaderMode_ = LORA_IMPLICIT_HEADER_MODE; 
 
     // pin/wiring parameters
-    const int      pwrDisable_         = LORA_R_PWR_DISABLE;
-    const int      reset_              = LORA_L_NRESET;
-    const int      ss_                 = LORA_L_SS;
-    const int      dio0_               = LORA_R_DI00;
+    static const int      pwrDisable_         = LORA_R_PWR_DISABLE;
+    static const int      reset_              = LORA_L_NRESET;
+    static const int      ss_                 = LORA_L_SS;
+    static const int      dio0_               = LORA_R_DI00;
 
     // send timing parameters
     const int      baseSendDelay_      = LORAY_BASE_SEND_DELAY_MS;
@@ -440,7 +437,48 @@ namespace FarmBeats {
     unsigned long txDelay() {
       return baseSendDelay_ + random(randomSendDelay_);
     }
-    
+
+    void sendStreamBuf(Stream &ds, bool dumpPacket=DUMP_TX_PACKET) {
+      int dataLen = streamBuf_.dataLen();
+      byte *data  = streamBuf_.data();
+      
+      if (dataLen) {
+	// we have data to send
+	int sentCnt;
+	theLoRa.beginPacket(implicitHeaderMode_);
+	sentCnt = copyDataToStream(theLoRa, data, dataLen);
+	theLoRa.endPacket();
+	
+	txCnt_      += sentCnt;
+	lastTx_      = millis();
+	nextTxAfter_ = txDelay();
+	
+	if (dumpPacket) {
+	  ds.print(myIdStr_ + ":>\n\t");
+	  copyDataToStream(ds, data, dataLen);
+	  ds.println("\n\tsentCnt:" + String(sentCnt) + " txCnt_:" + String(txCnt_));
+	}
+	streamBuf_.reset();
+      }
+    }
+
+    void onReceive(int packetSize, Stream &s, bool dumpPacket=DUMP_RX_PACKET) {
+      if (packetSize == 0) return;
+      String inStr = "";
+
+      while (theLoRa.available()) {
+	inStr += (char)theLoRa.read();
+      }
+      rxCnt_ +=  inStr.length();
+      if (dumpPacket) {
+        s.print(myIdStr_ + ":<\n\t");
+	s.println(inStr);
+        s.println("\tRSSI: " + String(theLoRa.packetRssi()));
+        s.println("\tSnr: " + String(theLoRa.packetSnr()));
+        s.println("\trxCnt_: " + String(rxCnt_));
+      }
+    }
+
   public:
     
     LoraModule() {}
@@ -486,48 +524,7 @@ namespace FarmBeats {
       }
       return rc;
     }
-    
-    void sendStreamBuf(Stream &ds, bool dumpPacket=DUMP_TX_PACKET) {
-      int dataLen = streamBuf_.dataLen();
-      byte *data  = streamBuf_.data();
-      
-      if (dataLen) {
-	// we have data to send
-	int sentCnt;
-	theLoRa.beginPacket(implicitHeaderMode_);
-	sentCnt = copyDataToStream(theLoRa, data, dataLen);
-	theLoRa.endPacket();
-	
-	txCnt_      += sentCnt;
-	lastTx_      = millis();
-	nextTxAfter_ = txDelay();
-	
-	if (dumpPacket) {
-	  ds.print(myIdStr_ + ":>\n\t");
-	  copyDataToStream(ds, data, dataLen);
-	  ds.println("\n\tsentCnt:" + String(sentCnt) + " txCnt_: " + String(txCnt_));
-	}
-	streamBuf_.reset();
-      }
-    }
-	      
-    void onReceive(int packetSize, Stream &s, bool dumpPacket=DUMP_RX_PACKET) {
-      if (packetSize == 0) return;
-      String inStr = "";
-
-      while (theLoRa.available()) {
-	inStr += (char)theLoRa.read();
-      }
-      rxCnt_ +=  inStr.length();
-      if (dumpPacket) {
-        s.print(myIdStr_ + ":<\n\t");
-	s.println(inStr);
-        s.println("\tRSSI: " + String(theLoRa.packetRssi()));
-        s.println("\tSnr: " + String(theLoRa.packetSnr()));
-        s.println("\trxCnt_: " + String(rxCnt_));
-      }
-    }
-    
+    	          
     void loopAction(Stream &s) {
       // local input stream processing
       streamBuf_.buffer(s);
