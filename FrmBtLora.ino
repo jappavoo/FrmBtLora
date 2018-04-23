@@ -1,11 +1,21 @@
 /*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
 
-  NOTE THE MDOT uses sx1272 which is different from the sx1278 that the Indian Farm 
+  This code is hard coded around the Semtech sx1276 which is the radio module on the 
+  LORA 868Mhz 8X1276 RF MODULE from ROBOKITS INDIA RKI-2726 
+
+  NOTE THE MDOT uses sx1272 which is different from the sx1276 that the Indian Farm 
       Beats sensor box uses 
 
   Known Issues:
-     0)  Hardware CRC not working needs debugging
+    -1)  I have included a submodule checkout of the official semtech sx1276 code
+         However I am only using it for the register headerfile.  This code
+         provides a wealth of knowledge on how to properly configure and use the radio.
+         One should carefully consider adopting its best practices for settup the
+         radio in context of the FarmBeats depolyment scenario.  I have not done this!
+
+     0)  CRC works between sensor boxes but need to confirm functionality between mdot 
+         and sensor boxs
      
      1)  See FIXME in LoraModule::stop()
            I still see power on the LoRa Module after calling stop.
@@ -38,12 +48,13 @@
 #include <SPI.h>              // include libraries
 #include <EEPROM.h>
 #include <LoRa.h>
+#include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 
 #define VERSION "$Id$"
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
-// #define DEBUG
+#define DEBUG
 
 // set next line to true to reset EEPROM id back to null (-1)
 #define EEPROM_RESET_ID false
@@ -65,11 +76,13 @@
 
 // DEBUG SETTING
 // use the following to customize debug behaviour
-#define WAIT true
-#define MSG  true
-#define LORA_POWER_TEST 
-#define LORA_DUMP_REGISTERS 
-#define DUMP_EEPROM 
+#define WAIT false
+#define MSG  false
+#define LORA_INFO
+#define LORA_STATS
+//#define LORA_POWER_TEST 
+//#define LORA_DUMP_REGISTERS 
+//#define DUMP_EEPROM 
 
 void waitForKey(Stream &s, String str, bool msg=MSG, bool wait=WAIT)
 {
@@ -145,8 +158,106 @@ namespace FarmBeats {
   
 
   class LoRaClass : public ::LoRaClass {
-  public:
+#ifdef LORA_STATS
+    uint16_t numValidHdrsRx_;
+    uint16_t numValidPktsRx_;
+    uint8_t  numPayLoadBytesRx_;
+    uint8_t  irqFlags_;
+    
+    uint8_t getIRQFlags() {
+      return read_reg(REG_LR_IRQFLAGS);
+    }
+    
+    uint8_t getPayLoadBytesRx() {
+      return read_reg(REG_LR_RXNBBYTES);
+    }
+    
+    uint16_t getNumValidPktsRx() {
+      uint16_t val;
+      val = (read_reg(REG_LR_RXPACKETCNTVALUEMSB) << 8) |
+  	    (read_reg(REG_LR_RXPACKETCNTVALUELSB)     );  
+      return val;
+    }
+
+    uint16_t getNumValidHdrRx() {
+      uint16_t val;
+      val = (read_reg(REG_LR_RXHEADERCNTVALUEMSB) << 8) |
+  	    (read_reg(REG_LR_RXHEADERCNTVALUELSB)     );  
+      return val;
+    }
+#endif
     unsigned char read_reg(uint8_t addr) { return readRegister(addr); }
+  public:
+#ifdef LORA_INFO
+    void info(Stream &s, long freq, long bw, int sf, int txPwr, int crd, long preLen,
+	      int sw, bool crc, bool iMode) {
+            s.print("\n\t\tversion=" + String(read_reg(REG_LR_VERSION),HEX));
+      s.print("\n\t\tRegOpMode=" + String(read_reg(REG_LR_OPMODE),HEX));
+      s.print("\n\t\tfreq_=" + String(freq, DEC) + " reg=" +
+	      String(((uint32_t)read_reg(REG_LR_FRFMSB)) << 16 |
+		     ((uint32_t)read_reg(REG_LR_FRFMID)) <<  8 |
+		     ((uint32_t)read_reg(REG_LR_FRFLSB))       , DEC));
+      s.print("\n\t\tbandwidth_=" + String(bw, DEC) + " reg=" +
+	      String(((read_reg(REG_LR_MODEMCONFIG1)>>4)&0xf),DEC));
+      s.print("\n\t\tspreadingFactor_=" + String(sf, DEC) + " reg=" +
+	      String((read_reg(REG_LR_MODEMCONFIG2)>>4)&0xf,DEC));
+      s.print("\n\t\ttxPower_=" + String(txPwr, DEC) + " REG_PA_CONFIG=" +
+	      String(read_reg(REG_LR_PACONFIG),HEX));
+      s.print("\n\t\tLNA=" + String(read_reg(REG_LR_LNA),HEX));
+      s.print("\n\t\tcodingRateDenom_=" + String(crd, DEC) + " reg=" +
+	      String((read_reg(REG_LR_MODEMCONFIG1) >> 1) & 0x3,DEC));
+      s.print("\n\t\tpreambleLength_=" + String(preLen, DEC) + " reg=" +
+	      String(read_reg(REG_LR_PREAMBLEMSB) << 8 |
+		     read_reg(REG_LR_PREAMBLELSB)));
+      s.print("\n\t\tsyncWord_=" + String(sw,HEX) + " reg=" +
+	      String(read_reg(REG_LR_SYNCWORD),HEX));
+      s.print("\n\t\tcrc_=" + String(crc) + " reg=" +
+	      String((read_reg(REG_LR_MODEMCONFIG2)>>2)&0x1));
+      s.println("\n\t\timplicitHeaderMode=" + String(iMode) + " reg=" +
+		String(read_reg(REG_LR_MODEMCONFIG1)&0x1));
+    }
+#endif
+#ifdef LORA_STATS
+    void dumpStats(Stream &s) {
+      s.println("\tirqFlags: RXTMTOUT:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_RXTIMEOUT)!=0)  +
+		" RXDONE:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_RXDONE)!=0) +
+		" PLCRCERR:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_PAYLOADCRCERROR)!=0) +
+		" VALIDHDR:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_VALIDHEADER)!=0) +
+		" TXDONE:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_TXDONE)!=0) +
+		" CADDONE:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_CADDONE)!=0) +
+		" FHSSCHGCH:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_FHSSCHANGEDCHANNEL)!=0) +
+		" CADDET:" +
+		String((irqFlags_ & RFLR_IRQFLAGS_CADDETECTED)!=0));
+      s.println("\tnumValidHdrsRx:" + String(numValidHdrsRx_) + 
+              " numValidPktsRx:" + String(numValidPktsRx_) +
+		" numPayLoadBytesRx:" + String(numPayLoadBytesRx_));  
+    }
+    bool updateStats() {
+      bool chg = false;
+      uint16_t irqFlgs = getIRQFlags();
+      uint16_t hdrCnt  = getNumValidHdrRx();
+      uint16_t pktCnt  = getNumValidPktsRx();
+      uint8_t  bytes   = getPayLoadBytesRx();
+      
+      if (irqFlgs != irqFlags_)          {
+	// dont't payattention to changes in RXTIMEOUTS output is too noisy
+	if ((irqFlags_ ^ irqFlgs) != RFLR_IRQFLAGS_RXTIMEOUT) chg = true;
+	irqFlags_=irqFlgs;
+      }
+      if (hdrCnt  != numValidHdrsRx_)    { numValidHdrsRx_=hdrCnt;   chg=true; }
+      if (pktCnt  != numValidPktsRx_)    { numValidPktsRx_=pktCnt;   chg=true; }
+      if (bytes   != numPayLoadBytesRx_) { numPayLoadBytesRx_=bytes; chg=true; }
+      
+      return chg;      
+    }
+#endif
   } theLoRa;
 
 
@@ -163,7 +274,7 @@ namespace FarmBeats {
   const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
   const long LORA_PREAMBLE_LENGTH      = 8;
   const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12
-  const bool LORA_CRC                  = false;
+  const bool LORA_CRC                  = true;
   // By default we operate in explicit header mode:
   // The packets include a hardware generated header
   // See page 26 of RFM95/96/97/98(W) manual for details. Brief summary is below
@@ -235,10 +346,10 @@ namespace FarmBeats {
     // radio configuration parameters
     const long     freq_               = LORA_FREQ;
     const long     bandwidth_          = LORA_BANDWIDTH;
+    const long     preambleLength_     = LORA_PREAMBLE_LENGTH;
     const int      spreadingFactor_    = LORA_SPREADING_FACTOR;
     const int      txPower_            = LORA_TX_POWER_LEVEL;
     const int      codingRateDenom_    = LORA_CODING_RATE_DENOM;
-    const long     preambleLength_     = LORA_PREAMBLE_LENGTH;
     const int      syncWord_           = LORA_SYNC_WORD;
     const bool     crc_                = LORA_CRC;
     const bool     implicitHeaderMode_ = LORA_IMPLICIT_HEADER_MODE; 
@@ -336,7 +447,8 @@ namespace FarmBeats {
 
     void setId(uint32_t id) { myId_ = id; myIdStr_ = String(id,HEX); }
     uint32_t getId() { return myId_; }
-    
+
+#ifdef LORA_INFO
     void info(Stream &s) {
       s.println("LoraModule():");
       s.println("\tmyId_: " + String(myId_) + " myIdStr_: " + myIdStr_);
@@ -345,30 +457,10 @@ namespace FarmBeats {
       s.print(" ss_="); s.print(ss_, DEC);
       s.print(" dio0_="); s.print(dio0_, DEC);
       s.print("\n\tRADIO: ");
-      s.print("\n\t\tversion=" + String(theLoRa.read_reg(0x42),HEX));
-      s.print("\n\t\tRegOpMode=" + String(theLoRa.read_reg(0x01),HEX));
-      s.print("\n\t\tfreq_=" + String(freq_, DEC) + " reg=" +
-	      String(((uint32_t)theLoRa.read_reg(0x6)) << 16 |
-		     ((uint32_t)theLoRa.read_reg(0x7)) <<  8 |
-		     ((uint32_t)theLoRa.read_reg(0x8))       , DEC));
-      s.print("\n\t\tbandwidth_=" + String(bandwidth_, DEC) + " reg=" +
-	      String(((theLoRa.read_reg(0x1d)>>4)&0xf),DEC));
-      s.print("\n\t\tspreadingFactor_=" + String(spreadingFactor_, DEC) + " reg=" +
-	      String((theLoRa.read_reg(0x1e)>>4)&0xf,DEC));
-      s.print("\n\t\ttxPower_=" + String(txPower_, DEC) + " REG_PA_CONFIG=" +
-	      String(theLoRa.read_reg(0x09),HEX));
-      s.print("\n\t\tLNA=" + String(theLoRa.read_reg(0x0c),HEX));
-      s.print("\n\t\tcodingRateDenom_=" + String(codingRateDenom_, DEC) + " reg=" +
-	      String((theLoRa.read_reg(0x1d) >> 1) & 0x3,DEC));
-      s.print("\n\t\tpreambleLength_=" + String(preambleLength_, DEC) + " reg=" +
-	      String(theLoRa.read_reg(0x20) << 8 | theLoRa.read_reg(0x21)));
-      s.print("\n\t\tsyncWord_=" + String(syncWord_,HEX) + " reg=" +
-	      String(theLoRa.read_reg(0x39),HEX));
-      s.print("\n\t\tcrc_=" + String(crc_) + " reg=" +
-	      String((theLoRa.read_reg(0x1e)>>2)&0x1));
-      s.println("\n\t\timplicitHeaderMode=" + String(implicitHeaderMode_) + " reg=" +
-		String(theLoRa.read_reg(0x1d)&0x1));
+      theLoRa.info(s, freq_, bandwidth_, spreadingFactor_, txPower_, codingRateDenom_,
+	     preambleLength_, syncWord_, crc_, implicitHeaderMode_);
     }
+#endif
     
     int start() {
       SPI.begin();
@@ -388,7 +480,9 @@ namespace FarmBeats {
 	theLoRa.setPreambleLength(preambleLength_);
 	theLoRa.setSyncWord(syncWord_);
 	if (crc_) theLoRa.enableCrc(); else theLoRa.disableCrc();
+#ifdef LORA_INFO
 	info(Serial);
+#endif
       }
       return rc;
     }
@@ -444,6 +538,10 @@ namespace FarmBeats {
         sendStreamBuf(s);
       }
 
+#ifdef LORA_STATS
+      if (theLoRa.updateStats()) { theLoRa.dumpStats(s); }
+#endif
+      
       // poll and process any data on theLoRa
       onReceive(theLoRa.parsePacket(),s);
     }
