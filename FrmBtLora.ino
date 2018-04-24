@@ -8,6 +8,9 @@
       Beats sensor box uses 
 
   Known Issues:
+    -1)  Transmit power default set to 6 given testing in short ranges maybe more stable
+         Expore this and set value for field as needed.
+
      0)  I have included a submodule checkout of the official semtech sx1276 code
          However I am only using it for the register headerfile.  This code
          provides a wealth of knowledge on how to properly configure and use the radio.
@@ -42,12 +45,12 @@
 
 */
 
-#include <SPI.h>              // include libraries
+#include <SPI.h>              
 #include <EEPROM.h>
 #include <LoRa.h>
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 
-#define VERSION "$Id$"
+#define VERSION "$Id$ 0.2.5"
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
@@ -61,9 +64,11 @@
 //#define MYID 0x00000001
 #define MYID 0x00000002
 
-#define DUMP_RX_PACKET true
-#define DUMP_TX_PACKET true
+// turn on/off packet dumping to serial with the following
+#define DUMP_RX_PACKET 
+#define DUMP_TX_PACKET
 
+#define UNUSED(x) (void)(x)
 
 #ifndef DEBUG
 
@@ -73,10 +78,11 @@
 
 // DEBUG SETTING
 // use the following to customize debug behaviour
+#define PRINT_VERSION_STRING
 #define WAIT false
 #define MSG  false
 #define LORA_INFO
-#define LORA_STATS
+//#define LORA_STATS
 //#define LORA_POWER_TEST 
 //#define LORA_DUMP_REGISTERS 
 //#define DUMP_EEPROM 
@@ -91,6 +97,31 @@ void waitForKey(Stream &s, String str, bool msg=MSG, bool wait=WAIT)
 }
 
 #endif
+
+#if defined(DUMP_RX_PACKET) || defined(DUMP_TX_PACKET)
+int dumpHex(Stream &s, unsigned char *start, int bytes) 
+{
+  int j;
+  int i;
+  for (j=0; j<bytes; ) {
+    if ((j%16) == 0) s.print("\t" + String(j,HEX) + ": ");
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      s.print(String(start[j+i],HEX) + " ");
+    }
+    s.print("|");
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      char c=start[j+i];
+      if (c>=' ' && c<='~')  s.print(c);
+      else s.print(".");
+    }
+    s.print("|\n");
+    j+=i;
+  }
+  return j;
+}
+
+#endif
+
 
 /************** CODE FOLLOWS ****************/
   
@@ -185,6 +216,8 @@ namespace FarmBeats {
 #endif
     unsigned char read_reg(uint8_t addr) { return readRegister(addr); }
   public:
+    int getRssiPktValue() { return read_reg(REG_LR_PKTRSSIVALUE); }
+    int getSnrPktValue() { return read_reg(REG_LR_PKTSNRVALUE); }
 #ifdef LORA_INFO
     void info(Stream &s, long freq, long bw, int sf, int txPwr, int crd, long preLen,
 	      int sw, bool crc, bool iMode) {
@@ -255,6 +288,7 @@ namespace FarmBeats {
       return chg;      
     }
 #endif
+    static const int MAX_PKT_SIZE = 255;
   } theLoRa;
 
 
@@ -267,7 +301,7 @@ namespace FarmBeats {
   const long LORA_FREQ                 = 868E6;
   const long LORA_BANDWIDTH            = 125E3;  
   const int  LORA_SPREADING_FACTOR     = 7;
-  const int  LORA_TX_POWER_LEVEL       = 17;
+  const int  LORA_TX_POWER_LEVEL       = 6;
   const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
   const long LORA_PREAMBLE_LENGTH      = 8;
   const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12
@@ -404,6 +438,8 @@ namespace FarmBeats {
     unsigned char spcrIntialValue_;
     bool pwr_;
 
+    unsigned char pktBuffer[LoRaClass::MAX_PKT_SIZE];
+    
     void sleep() { delay(100); }
     
     void disablePower() {
@@ -421,15 +457,15 @@ namespace FarmBeats {
     // adds header info : just using ascii format for the moment
     // format: <id>,<len>,<data>
     int copyDataToStream(Stream &s, byte *data, int dataLen) {
-      int cnt;
+      String hstr = myIdStr_ + "," + String(dataLen) + ","; 
+      int hlen = hstr.length();
+      int len = hlen + dataLen;
       
-      cnt  = s.print(myIdStr_);
-      cnt += s.print(",");
-      cnt += s.print(dataLen);
-      cnt += s.print(",");
-      cnt += s.write(data, dataLen);
+      hstr.getBytes(pktBuffer, LoRaClass::MAX_PKT_SIZE);
+      memcpy(&pktBuffer[hlen], data, LoRaClass::MAX_PKT_SIZE - dataLen);
+      s.write(pktBuffer, len);
       
-      return cnt;
+      return len;
     }
 
     // FIXME: JA harded coded delay eventually should be adapted to
@@ -438,7 +474,8 @@ namespace FarmBeats {
       return baseSendDelay_ + random(randomSendDelay_);
     }
 
-    void sendStreamBuf(Stream &ds, bool dumpPacket=DUMP_TX_PACKET) {
+    void sendStreamBuf(Stream &ds) {
+      UNUSED(ds); // suppress warning if dumping turned off
       int dataLen = streamBuf_.dataLen();
       byte *data  = streamBuf_.data();
       
@@ -452,31 +489,42 @@ namespace FarmBeats {
 	txCnt_      += sentCnt;
 	lastTx_      = millis();
 	nextTxAfter_ = txDelay();
-	
-	if (dumpPacket) {
-	  ds.print(myIdStr_ + ":>\n\t");
-	  copyDataToStream(ds, data, dataLen);
-	  ds.println("\n\tsentCnt:" + String(sentCnt) + " txCnt_:" + String(txCnt_));
-	}
+
+#ifdef DUMP_TX_PACKET
+	ds.print(myIdStr_ + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\n\t");
+	dumpHex(ds, pktBuffer, sentCnt);
+#endif
 	streamBuf_.reset();
       }
     }
 
-    void onReceive(int packetSize, Stream &s, bool dumpPacket=DUMP_RX_PACKET) {
+    void onReceive(int packetSize, Stream &s) {
       if (packetSize == 0) return;
       String inStr = "";
-
+      int n=0;
+      if ((unsigned int)packetSize > sizeof(pktBuffer)) {
+	s.print("ERROR: packetSize:" + String(packetSize) + " > " +
+		 String(sizeof(pktBuffer)));
+      }
+      
       while (theLoRa.available()) {
-	inStr += (char)theLoRa.read();
+	pktBuffer[n] = (char)theLoRa.read();
+	n++;
       }
-      rxCnt_ +=  inStr.length();
-      if (dumpPacket) {
-        s.print(myIdStr_ + ":<\n\t");
-	s.println(inStr);
-        s.println("\tRSSI: " + String(theLoRa.packetRssi()));
-        s.println("\tSnr: " + String(theLoRa.packetSnr()));
-        s.println("\trxCnt_: " + String(rxCnt_));
-      }
+      
+      if (packetSize != n) { s.println("ERROR size mismatch!!!"); }
+      rxCnt_ +=  packetSize;
+      
+#ifdef DUMP_RX_PACKET
+        s.print(myIdStr_ + ":<" +
+		String(packetSize) + "[" + String(rxCnt_) +
+		"] rssi:" +
+		String(theLoRa.packetRssi())+ "(" +
+		String(theLoRa.getRssiPktValue()) + ") snr:" +
+		String(theLoRa.packetSnr()) + "("
+		+ String(theLoRa.getSnrPktValue()) + ")\n\t");
+	dumpHex(s, pktBuffer, packetSize);
+#endif	
     }
 
   public:
@@ -628,14 +676,16 @@ void setup() {
   Serial.begin(9600); // initialize serial
   while (!Serial);
 
+#ifdef PRINT_VERSION_STRING
   Serial.println("FrmBtLora version: " + String(VERSION));
+#endif
   
   waitForKey(Serial, "setup(): BEGIN: Send key to continue");
 
 #ifdef DUMP_EEPROM
   FarmBeats::Id::dumpEEProm(Serial);
   waitForKey(Serial, "EEProm dump done");
- #endif
+#endif
 
   lm.setId(id.value());
 

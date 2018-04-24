@@ -70,51 +70,123 @@ void info()
    printf("\r\n\t\tcrc_=%d", lora.getRxPayloadCrcOn());
    printf("\r\n\t\timplicitHeaderMode=%d\r\n", lora.getHeaderMode());
 }
-int main()
+
+void setTxPower(int val) {
+      radio.RegPaConfig.bits.OutputPower = 0xf & val;    
+      radio.write_reg(REG_PACONFIG, radio.RegPaConfig.octet);
+}
+
+int 
+hexdump(unsigned char *start, int bytes) 
 {
-    uint8_t seq = 'a';
-    
+  int j;
+  int i;
+  for (j=0; j<bytes; ) {
+    if ((j%16) == 0) printf("\t%x: ", j);
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      printf("%x ", start[j+i]);
+    }
+    printf("|");
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      unsigned char c=start[j+i];
+      if (c>=' ' && c<='~')  printf("%c", c);
+      else  printf(".");
+    }
+    printf("|\r\n");
+    j+=i;
+  }
+  return j;
+}
+
+
+int main()
+{    
     pc.baud(115200);
     
-    pc.printf("\r\nsx127x_simple_TX_mDot!! 0.1.1\r\n");
+    pc.printf("\r\nFrmBtmDot 0.2.5\r\n");
     
     radio.rf_switch.attach(rfsw_callback);
     
     radio.set_frf_MHz(868.0);
     lora.enable();
     lora.setBw_KHz(125);
+    setTxPower(6);
     // lora.setCodingRate();
+    /* Transmit power default set to 6 given testing in short ranges maybe 
+       more stable.
+       Expore this and set value for field as needed. */
     lora.setSf(7);
     lora.setRxPayloadCrcOn(true);
 
     /* RFO or PABOOST choice:     */
     radio.RegPaConfig.bits.PaSelect = 1;    // mDot connects PA_BOOST
     radio.write_reg(REG_PACONFIG, radio.RegPaConfig.octet);
-                
-    /* constant payload length of one byte */
-    lora.RegPayloadLength = 1;
-    radio.write_reg(REG_LR_PAYLOADLENGTH, lora.RegPayloadLength);
-    
+                   
     info();
-    waitForKey("info done");
     
-    char key=0;
-    int count=0;
+  
+    char buf[20];
+    int idx=0;
+    int txCnt=0;
+    int rxCnt=0;
+    char hdr[80];
+    int myId=0;
+    int msNextSend=1000;
+    Timer tmr;
+    
+    tmr.start();
+    // start in continous receive mode
+    lora.start_rx(RF_OPMODE_RECEIVER);
+    
     for (;;) {
-        if (key != 'c') {
-          key=waitForKey("Send loop top: press c to do continues sends");
-        }       
-        printf("Sending: %c\r\n", seq);
-        radio.tx_buf[0] = seq;  /* set payload */
-        lora.start_tx(lora.RegPayloadLength);   /* begin transmission */
+         
+         if (lora.service() == SERVICE_READ_FIFO) {
+            rxCnt += lora.RegRxNbBytes;
+            /* dump sent data */
+            {
+              printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId, 
+                     lora.RegRxNbBytes, rxCnt, 
+                     lora.get_pkt_rssi(), lora.RegPktRssiValue, 
+                     lora.RegPktSnrValue * 0.25, lora.RegPktSnrValue);
+              hexdump((unsigned char *)radio.rx_buf, lora.RegRxNbBytes);
+            } 
+        }
         
-        while (lora.service() != SERVICE_TX_DONE)   /* wait for transmission to complete */
-            ;
-        count++;
-        printf("sent: %c count: %d bytes: %d\r\n", seq, count, count*lora.RegPayloadLength);
-        radio.set_opmode(RF_OPMODE_STANDBY);
-        wait(1.0);  /* throttle sending rate */
-        seq++;  /* change payload */
-        if (seq > 'z') seq = 'a';
+        if (pc.readable()) {
+            buf[idx]=getchar();
+            idx++;
+        }
+        
+        if (idx && (tmr.read_ms() >= msNextSend)) {
+          int hb = snprintf(hdr, sizeof(hdr), "%d,%d,", myId, idx);
+          int n = hb + idx;
+          if (n<=sizeof(radio.tx_buf)) {
+            lora.RegPayloadLength = n;
+            radio.write_reg(REG_LR_PAYLOADLENGTH, lora.RegPayloadLength);
+            memcpy(radio.tx_buf, hdr, hb);
+            memcpy(&radio.tx_buf[hb], buf, idx);
+            
+            /* begin transmission */    
+            lora.start_tx(lora.RegPayloadLength);   
+        
+            /* wait for transmission to complete */
+            while (lora.service() != SERVICE_TX_DONE); 
+            
+            /* done sending go back to continous receive mode */
+            lora.start_rx(RF_OPMODE_RECEIVER);
+            
+            txCnt += lora.RegPayloadLength;
+            /* dump recieved data */
+            { 
+              printf("%d:>%d[%d]\r\n", myId,lora.RegPayloadLength, txCnt);
+              hexdump(radio.tx_buf, lora.RegPayloadLength);
+            }
+            idx=0;
+            msNextSend=1000;
+            tmr.reset();
+          }
+       }
+       
+      
     }
 }

@@ -2,7 +2,7 @@
 <project>
 	<fileVersion>2</fileVersion>
 	<configuration>
-		<name>FrmBtmdot</name>
+		<name>FrmBtmDot</name>
 		<toolchain>
 			<name>ARM</name>
 		</toolchain>
@@ -284,6 +284,8 @@
 					
 					<state>-DDEVICE_SLEEP=1</state>
 					
+					<state>-DMBED_BUILD_TIMESTAMP=1524571971.71</state>
+					
 					<state>--diag_suppress=Pa050,Pa084,Pa093,Pa082</state>
 					
 					<state>-DDEVICE_PORTINOUT=1</state>
@@ -327,8 +329,6 @@
 					<state>-DHSE_VALUE=26000000</state>
 					
 					<state>-DTARGET_STM32F411RE</state>
-					
-					<state>-DMBED_BUILD_TIMESTAMP=1524467480.46</state>
 					
 					<state>-DTARGET_UVISOR_UNSUPPORTED</state>
 					
@@ -1103,10 +1103,10 @@
 	</configuration>
 	
 	<group>
-	    <name>FrmBtmdot</name>
+	    <name>FrmBtmDot</name>
 	    
 	    <file>
-	        <name>$PROJ_DIR$/mbed_config.h</name>
+	        <name>/tmp/tmpOE9sun/mbed_config.h</name>
 	    </file>
 	    
 	    <file>
@@ -2644,15 +2644,15 @@
 	    </file>
 	    
 	    <file>
-	        <name>$PROJ_DIR$/SX127x/sx127x.cpp</name>
-	    </file>
-	    
-	    <file>
 	        <name>$PROJ_DIR$/SX127x/sx127x_fsk.cpp</name>
 	    </file>
 	    
 	    <file>
 	        <name>$PROJ_DIR$/SX127x/sx127x_lora.cpp</name>
+	    </file>
+	    
+	    <file>
+	        <name>$PROJ_DIR$/SX127x/sx127x.cpp</name>
 	    </file>
 	    
 	</group>
