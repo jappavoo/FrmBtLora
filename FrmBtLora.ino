@@ -6,6 +6,11 @@
 
   NOTE THE MDOT uses sx1272 which is different from the sx1276 that the Indian Farm 
       Beats sensor box uses 
+  Requirements:
+       standard SPI library
+       standar EEPROM library
+       LoRa -- the repository include a version to use it link the libraries/LoRa directory
+               to your arduino libraries directory
 
   Known Issues:
     -1)  Transmit power default set to 6 given testing in short ranges maybe more stable
