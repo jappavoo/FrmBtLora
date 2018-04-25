@@ -1,5 +1,6 @@
 #include "sx127x_lora.h"
 
+//#define DUMP_PACKETS
 //                mosi,      miso,     sclk,       cs,        rst,      dio0,      dio1
 // SX127x(PinName dio0, PinName dio_1, PinName cs, SPI&, PinName rst);
 //SX127x radio(LORA_MOSI, LORA_MISO, LORA_SCK, LORA_NSS, LORA_RESET, LORA_DIO0, LORA_DIO1);
@@ -103,14 +104,14 @@ int main()
 {    
     pc.baud(115200);
     
-    pc.printf("\r\nFrmBtmDot 0.2.5\r\n");
+    pc.printf("\r\nFrmBtmDot 0.2.8\r\n");
     
     radio.rf_switch.attach(rfsw_callback);
     
-    radio.set_frf_MHz(868.0);
+    radio.set_frf_MHz(868.85);
     lora.enable();
     lora.setBw_KHz(125);
-    setTxPower(6);
+    setTxPower(7);
     // lora.setCodingRate();
     /* Transmit power default set to 6 given testing in short ranges maybe 
        more stable.
@@ -142,6 +143,7 @@ int main()
          
          if (lora.service() == SERVICE_READ_FIFO) {
             rxCnt += lora.RegRxNbBytes;
+#ifdef DUMP_PACKETS            
             /* dump sent data */
             {
               printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId, 
@@ -150,6 +152,20 @@ int main()
                      lora.RegPktSnrValue * 0.25, lora.RegPktSnrValue);
               hexdump((unsigned char *)radio.rx_buf, lora.RegRxNbBytes);
             } 
+#endif            
+            {
+               char *pktBuffer=(char *)radio.rx_buf;
+               int packetSize = lora.RegRxNbBytes;
+               int payloadIdx=0;
+               // skip header
+               for (int i=0; i<2; i++) {
+                 while (pktBuffer[payloadIdx]!=',' && payloadIdx < packetSize) { payloadIdx++;}
+                 payloadIdx++;
+               }
+               if (payloadIdx < packetSize) {
+                 write(1,&pktBuffer[payloadIdx],packetSize-payloadIdx);
+               }
+            }
         }
         
         if (pc.readable()) {
@@ -176,11 +192,13 @@ int main()
             lora.start_rx(RF_OPMODE_RECEIVER);
             
             txCnt += lora.RegPayloadLength;
-            /* dump recieved data */
+#ifdef DUMP_PACKETS            
+            /* dump sent data */
             { 
               printf("%d:>%d[%d]\r\n", myId,lora.RegPayloadLength, txCnt);
               hexdump(radio.tx_buf, lora.RegPayloadLength);
             }
+#endif            
             idx=0;
             msNextSend=1000;
             tmr.reset();
@@ -190,3 +208,4 @@ int main()
       
     }
 }
+

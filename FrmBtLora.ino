@@ -55,11 +55,12 @@
 #include <LoRa.h>
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 
-#define VERSION "$Id$ 0.2.5"
+#define VERSION "$Id$ 0.2.8"
+
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
-#define DEBUG
+//#define DEBUG
 
 // set next line to true to reset EEPROM id back to null (-1)
 #define EEPROM_RESET_ID false
@@ -70,19 +71,21 @@
 #define MYID 0x00000002
 
 // turn on/off packet dumping to serial with the following
-#define DUMP_RX_PACKET 
-#define DUMP_TX_PACKET
+//#define DUMP_RX_PACKET 
+//#define DUMP_TX_PACKET
 
 #define UNUSED(x) (void)(x)
 
 #ifndef DEBUG
-
+// data written to serial line is raw payload bytes
 #define waitForKey(...)
 
 #else
 
 // DEBUG SETTING
 // use the following to customize debug behaviour
+#define DUMP_RX_PACKET 
+#define DUMP_TX_PACKET
 #define PRINT_VERSION_STRING
 #define WAIT false
 #define MSG  false
@@ -119,7 +122,7 @@ int dumpHex(Stream &s, unsigned char *start, int bytes)
       if (c>=' ' && c<='~')  s.print(c);
       else s.print(".");
     }
-    s.print("|\n");
+    s.print("|\r\n");
     j+=i;
   }
   return j;
@@ -226,29 +229,29 @@ namespace FarmBeats {
 #ifdef LORA_INFO
     void info(Stream &s, long freq, long bw, int sf, int txPwr, int crd, long preLen,
 	      int sw, bool crc, bool iMode) {
-            s.print("\n\t\tversion=" + String(read_reg(REG_LR_VERSION),HEX));
-      s.print("\n\t\tRegOpMode=" + String(read_reg(REG_LR_OPMODE),HEX));
-      s.print("\n\t\tfreq_=" + String(freq, DEC) + " reg=" +
+            s.print("\r\n\t\tversion=" + String(read_reg(REG_LR_VERSION),HEX));
+      s.print("\r\n\t\tRegOpMode=" + String(read_reg(REG_LR_OPMODE),HEX));
+      s.print("\r\n\t\tfreq_=" + String(freq, DEC) + " reg=" +
 	      String(((uint32_t)read_reg(REG_LR_FRFMSB)) << 16 |
 		     ((uint32_t)read_reg(REG_LR_FRFMID)) <<  8 |
 		     ((uint32_t)read_reg(REG_LR_FRFLSB))       , DEC));
-      s.print("\n\t\tbandwidth_=" + String(bw, DEC) + " reg=" +
+      s.print("\r\n\t\tbandwidth_=" + String(bw, DEC) + " reg=" +
 	      String(((read_reg(REG_LR_MODEMCONFIG1)>>4)&0xf),DEC));
-      s.print("\n\t\tspreadingFactor_=" + String(sf, DEC) + " reg=" +
+      s.print("\r\n\t\tspreadingFactor_=" + String(sf, DEC) + " reg=" +
 	      String((read_reg(REG_LR_MODEMCONFIG2)>>4)&0xf,DEC));
-      s.print("\n\t\ttxPower_=" + String(txPwr, DEC) + " REG_PA_CONFIG=" +
+      s.print("\r\n\t\ttxPower_=" + String(txPwr, DEC) + " REG_PA_CONFIG=" +
 	      String(read_reg(REG_LR_PACONFIG),HEX));
-      s.print("\n\t\tLNA=" + String(read_reg(REG_LR_LNA),HEX));
-      s.print("\n\t\tcodingRateDenom_=" + String(crd, DEC) + " reg=" +
+      s.print("\r\n\t\tLNA=" + String(read_reg(REG_LR_LNA),HEX));
+      s.print("\r\n\t\tcodingRateDenom_=" + String(crd, DEC) + " reg=" +
 	      String((read_reg(REG_LR_MODEMCONFIG1) >> 1) & 0x3,DEC));
-      s.print("\n\t\tpreambleLength_=" + String(preLen, DEC) + " reg=" +
+      s.print("\r\n\t\tpreambleLength_=" + String(preLen, DEC) + " reg=" +
 	      String(read_reg(REG_LR_PREAMBLEMSB) << 8 |
 		     read_reg(REG_LR_PREAMBLELSB)));
-      s.print("\n\t\tsyncWord_=" + String(sw,HEX) + " reg=" +
+      s.print("\r\n\t\tsyncWord_=" + String(sw,HEX) + " reg=" +
 	      String(read_reg(REG_LR_SYNCWORD),HEX));
-      s.print("\n\t\tcrc_=" + String(crc) + " reg=" +
+      s.print("\r\n\t\tcrc_=" + String(crc) + " reg=" +
 	      String((read_reg(REG_LR_MODEMCONFIG2)>>2)&0x1));
-      s.println("\n\t\timplicitHeaderMode=" + String(iMode) + " reg=" +
+      s.println("\r\n\t\timplicitHeaderMode=" + String(iMode) + " reg=" +
 		String(read_reg(REG_LR_MODEMCONFIG1)&0x1));
     }
 #endif
@@ -303,10 +306,12 @@ namespace FarmBeats {
   //   https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
   //   default frequency to use in india is IN865-867 but we seem to be using
   //   868.0
-  const long LORA_FREQ                 = 868E6;
+  // mdot manual peer to peer says:
+  //  "For Europe 868 models, use a fixed frequency, 869.85, with 7 dBm power setting to allow 100% duty-cycle usage."
+  const long LORA_FREQ                 = 868850000;  
   const long LORA_BANDWIDTH            = 125E3;  
   const int  LORA_SPREADING_FACTOR     = 7;
-  const int  LORA_TX_POWER_LEVEL       = 6;
+  const int  LORA_TX_POWER_LEVEL       = 7;
   const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
   const long LORA_PREAMBLE_LENGTH      = 8;
   const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12
@@ -496,7 +501,7 @@ namespace FarmBeats {
 	nextTxAfter_ = txDelay();
 
 #ifdef DUMP_TX_PACKET
-	ds.print(myIdStr_ + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\n\t");
+	ds.print(myIdStr_ + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n\t");
 	dumpHex(ds, pktBuffer, sentCnt);
 #endif
 	streamBuf_.reset();
@@ -519,17 +524,30 @@ namespace FarmBeats {
       
       if (packetSize != n) { s.println("ERROR size mismatch!!!"); }
       rxCnt_ +=  packetSize;
-      
+
+            
 #ifdef DUMP_RX_PACKET
-        s.print(myIdStr_ + ":<" +
+        s.print("\r\n" + myIdStr_ + ":<" +
 		String(packetSize) + "[" + String(rxCnt_) +
 		"] rssi:" +
 		String(theLoRa.packetRssi())+ "(" +
 		String(theLoRa.getRssiPktValue()) + ") snr:" +
 		String(theLoRa.packetSnr()) + "("
-		+ String(theLoRa.getSnrPktValue()) + ")\n\t");
+		+ String(theLoRa.getSnrPktValue()) + ")\r\n\t");
 	dumpHex(s, pktBuffer, packetSize);
 #endif	
+
+      {
+	int payloadIdx=0;
+	// skip header
+	for (int i=0; i<2; i++) {
+	  while (pktBuffer[payloadIdx]!=',' && payloadIdx < packetSize) { payloadIdx++;}
+	  payloadIdx++;
+	}
+	if (payloadIdx < packetSize) {
+	  s.write(&pktBuffer[payloadIdx],packetSize-payloadIdx);
+	}
+      }
     }
 
   public:
@@ -547,7 +565,7 @@ namespace FarmBeats {
       s.print(" reset_="); s.print(reset_, DEC);
       s.print(" ss_="); s.print(ss_, DEC);
       s.print(" dio0_="); s.print(dio0_, DEC);
-      s.print("\n\tRADIO: ");
+      s.print("\r\n\tRADIO: ");
       theLoRa.info(s, freq_, bandwidth_, spreadingFactor_, txPower_, codingRateDenom_,
 	     preambleLength_, syncWord_, crc_, implicitHeaderMode_);
     }
@@ -706,7 +724,7 @@ void setup() {
 
   
   if (!lm.start()) {
-    Serial.println("ERROR: Failed to start Lora Module on.\n"
+    Serial.println("ERROR: Failed to start Lora Module on.\r\n"
 		   "    Check your connections.");
     while (true);                   
   }
