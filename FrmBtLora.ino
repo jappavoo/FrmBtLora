@@ -55,7 +55,7 @@
 #include <LoRa.h>
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 
-#define VERSION "$Id$ 0.2.8"
+#define VERSION "$Id$ 0.2.9"
 
 
 // uncomment next line to turn on debug (see below for how to customize
@@ -329,8 +329,8 @@ namespace FarmBeats {
   
   // Default send timing parameters
   
-  const int  LORA_RANDOM_SEND_DELAY_MS = 2000;
-  const int  LORAY_BASE_SEND_DELAY_MS  = 1000;
+  const int  LORA_RANDOM_SEND_DELAY_MS = 100;
+  const int  LORAY_BASE_SEND_DELAY_MS  = 10;
 
   
   class Id {

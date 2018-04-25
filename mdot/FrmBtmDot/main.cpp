@@ -104,7 +104,7 @@ int main()
 {    
     pc.baud(115200);
     
-    pc.printf("\r\nFrmBtmDot 0.2.8\r\n");
+    pc.printf("\r\nFrmBtmDot 0.2.9\r\n");
     
     radio.rf_switch.attach(rfsw_callback);
     
@@ -200,7 +200,7 @@ int main()
             }
 #endif            
             idx=0;
-            msNextSend=1000;
+            msNextSend=100;
             tmr.reset();
           }
        }
