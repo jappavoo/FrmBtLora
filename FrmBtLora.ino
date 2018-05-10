@@ -55,8 +55,14 @@
 #include <LoRa.h>
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 
+
 #define VERSION "$Id$ 0.2.9"
 
+#define INDESIGN_STREAM_PACKET_FORMAT
+
+#ifdef INDESIGN_STREAM_PACKET_FORMAT
+#include "IDPkt.h"
+#endif
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
