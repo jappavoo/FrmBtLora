@@ -13,8 +13,6 @@
                to your arduino libraries directory
 
   Known Issues:
-    -1)  Transmit power default set to 6 given testing in short ranges maybe more stable
-         Expore this and set value for field as needed.
 
      0)  I have included a submodule checkout of the official semtech sx1276 code
          However I am only using it for the register headerfile.  This code
@@ -54,19 +52,40 @@
 #include <EEPROM.h>
 #include <LoRa.h>
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
+#include "FrmBtLoraPkt.h"
+
+#define VERSION "$Id$ 0.2.14 raw"
+
+#define RAW
+//#define INDESIGN_PACKET_PROCESSING
+
+#ifndef INDESIGN_PACKET_PROCESSING
+#define SERIAL_INPUT_PROCESSING
+#endif
 
 
-#define VERSION "$Id$ 0.2.9"
 
-#define INDESIGN_STREAM_PACKET_FORMAT
-
-#ifdef INDESIGN_STREAM_PACKET_FORMAT
+#ifdef INDESIGN_PACKET_PROCESSING
 #include "IDPkt.h"
+// ATMEGA328 is little endian
+uint32_t Host32ToBE32(uint32_t x) {
+  return x << 24U | x >> 24U |                    // xchg first and last byte
+        (x & 0xFF00) << 8U |(x & 0xFF0000) >> 8U; // xchg first and last byte
+}
+uint32_t BE32ToHost32(uint32_t x) {
+    return x << 24U | x >> 24U |                  // xchg first and last byte
+        (x & 0xFF00) << 8U |(x & 0xFF0000) >> 8U; // xchg first and last byte
+}
+uint32_t Host32ToLE32(uint32_t x) { return x; }
+uint32_t LE32ToHost32(uint32_t x) { return x; }
+uint32_t Host16ToLE16(uint32_t x) { return x; }
+uint32_t LE16ToHost16(uint32_t x) { return x; }
+
 #endif
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
-//#define DEBUG
+#define DEBUG
 
 // set next line to true to reset EEPROM id back to null (-1)
 #define EEPROM_RESET_ID false
@@ -137,6 +156,7 @@ int dumpHex(Stream &s, unsigned char *start, int bytes)
 #endif
 
 
+
 /************** CODE FOLLOWS ****************/
   
 namespace FarmBeats {
@@ -198,6 +218,29 @@ namespace FarmBeats {
     // LORA_R_DI03=NOT_CONNECTED
   };
   
+  // DUMMY Inteface to sensors
+  class Sensors {
+  public:
+    void loopAction(){}
+    void setup() {}
+    uint32_t getTS()   { return 0xdeadbeef; }
+    uint16_t getADC0() { return 0x0CCC; }
+    uint16_t getADC1() { return 0x0100; }
+    uint16_t getADC2() { return 0x0456; }
+    uint16_t getADC3() { return 0xcafe; }
+    uint16_t getADC4() { return 0xfeed; }
+    uint16_t getADC5() { return 0xface; }
+  };
+  //  DUMMY Interface to counters
+  class Counters {
+  public:
+    void     setup() {}
+    uint8_t  getPwrCycCnt()     { return 1; }
+    uint8_t  getWDRstCnt()      { return 0; }
+    uint8_t  getOthRstCnt()     { return 0; }
+    uint16_t getLoRaResendCnt() { return 0; }
+    uint16_t getLoRaMaxMsgCnt() { return 0; }
+  };
 
   class LoRaClass : public ::LoRaClass {
 #ifdef LORA_STATS
@@ -308,19 +351,116 @@ namespace FarmBeats {
 
   
   // Default communication parameters
-  //   based on this document
+
+  //  I have consulted various documents here are some snipts that I found useful
+  //  
+  //   b
   //   https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
-  //   default frequency to use in india is IN865-867 but we seem to be using
-  //   868.0
+  //   default frequency to use in india is IN865-867  -- spectrum IN44
+
+  // ******************************************
+  // The Lorawan resgional parameters_v1.1rb doc says that india paramaters for
+  // LoRaWan are as follows:
+  //
+  // 1404 2.10.2 IN865-867 ISM Band channel frequencies
+  // 1405 This section applies to the Indian sub-continent.
+  // 1406 The network channels can be freely attributed by the network operator.
+  //      However the three  
+  // 1407 following default channels MUST be implemented in every
+  //      India 865-867MHz end-device.
+  // 1408 Those channels are the minimum set that all network gateways
+  //      SHOULD always be listening
+  // 1409 on.
+  // 1410
+  // 
+  // Modulation Bandwidth    Channel      FSK Bitrate or      Nb
+  //              [kHz]   Frequency [MHz] LoRa DR / Bitrate   Channels
+  //    LoRa      125        865.0625       DR0 to DR5          3
+  //                         865.4025       / 0.3-5 kbps
+  //                         865.985
+  // 1411 Table 68: IN865-867 default channels
+  // 1412 End-devices SHALL be capable of operating in the 865 to 867 MHz
+  //      frequency band and
+  // 1413 should feature a channel data structure to store the parameters of
+  //      at least 16 channels. A
+  // 1414 channel data structure corresponds to a frequency and a set of data
+  //      rates usable on this
+  // 1415 frequency.
+  // 1416 The first three channels correspond to 865.0625, 865.4025, and
+  //      865.985 MHz / DR0 to DR5
+  // 1417 and MUST be implemented in every end-device. Those default channels
+  //      cannot be modified
+  // 1418 through the NewChannelReq command and guarantee a minimal common
+  //      channel set
+  // 1419 between end-devices and network gateways.
+  // 1420 The following table gives the list of frequencies that SHALL be
+  //      used by end-devices to
+  // 1421 broadcast the JoinReq message. The JoinReq message transmit duty-cycle
+  //      SHALL follow the
+  // 1422 rules described in chapter “Retransmissions back-off” of the LoRaWAN
+  //      specification
+  // 1423 document.
+  // 1424
+  // Modulation Bandwidth    Channel      FSK Bitrate or      Nb
+  //              [kHz]   Frequency [MHz] LoRa DR / Bitrate   Channels
+  //    LoRa      125        865.0625       DR0 to DR5          3
+  //                         865.4025       / 0.3-5 kbps
+  //                         865.9850
+  // 1425 Table 69: IN865-867 JoinReq Channel List
+  // 1426 2.10.3 IN865-867 Data Rate and End-device Output Power Encoding
+  // 1427 There is no dwell time or duty-cycle limitation for the
+  //      INDIA 865-867 PHY layer. The
+  // 1428 TxParamSetupReq MAC command is not implemented by INDIA 865-867 devices.
+  // 1429 The following encoding is used for Data Rate (DR) and End-device Output
+  //      Power (TXPower)
+  // 1430 in the INDIA 865-867 band:
+  // 1431
+  // DataRate Configuration          Indicative physical
+  //                                   bit rate [bit/s]
+  //     0     LoRa: SF12 / 125 kHz         250
+  //     1     LoRa: SF11 / 125 kHz         440
+  //     2     LoRa: SF10 / 125 kHz         980
+  //     3     LoRa: SF9 / 125 kHz          1760
+  //     4     LoRa: SF8 / 125 kHz          3125
+  //     5     LoRa: SF7 / 125 kHz          5470
+  //     6            RFU                    RFU
+  //     7     FSK: 50 kbps                 50000
+  //   8..14          RFU                    RFU 
+  //     15     Defined in LoRaWAN
+  // 1432      Table 70: IN865-867 TX Data rate table
+  //
+  //   This document has a lot more info in it about the LoRaWan parameters
+  //   for India  Including power max payload and rxwindow's etc I will
+  //   continue to look at once I understand how the frequency we are using
+  //   relates to our need to be NOT LoRaWan compatible
+
+
+  // ******************************************
   // mdot manual peer to peer says:
-  //  "For Europe 868 models, use a fixed frequency, 869.85, with 7 dBm power setting to allow 100% duty-cycle usage."
-  const long LORA_FREQ                 = 868850000;  
+  //  "For Europe 868 models, use a fixed frequency, 869.85, with 7 dBm power
+  // setting to allow 100% duty-cycle usage."
+
+
+  // *******************************************
+  // InDesign LoRa Peer-To-Peer Protocol Document specifies
+  // AT+NJM=3
+  // AT+ACK=0
+  // AT+NA=4D734662
+  // AT+NSK=89ABC89ABC89ABC89ABC89ABC89ABC34
+  // AT+DSK=45678904567890456789045678904567
+  // AT+TXDR=DR3
+  // AT+TXP=11
+  // AT+TXF=866300000
+  // AT&W
+
+  // So based the above we first off 
+  const long LORA_FREQ                 = 866300000;
   const long LORA_BANDWIDTH            = 125E3;  
-  const int  LORA_SPREADING_FACTOR     = 7;
-  const int  LORA_TX_POWER_LEVEL       = 7;
+  const int  LORA_SPREADING_FACTOR     = 9;
+  const int  LORA_TX_POWER_LEVEL       = 11;
   const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
   const long LORA_PREAMBLE_LENGTH      = 8;
-  const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12
+  const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12 
   const bool LORA_CRC                  = true;
   // By default we operate in explicit header mode:
   // The packets include a hardware generated header
@@ -332,11 +472,12 @@ namespace FarmBeats {
   // header: <payload len> <fwd error correcton code rate> <yes/no payload_crc present>
   // error correcton code rate for header is 4/8
   // as indicated the payload code rate is specified in the header
-  
+
+
   // Default send timing parameters
   
   const int  LORA_RANDOM_SEND_DELAY_MS = 100;
-  const int  LORAY_BASE_SEND_DELAY_MS  = 10;
+  const int  LORAY_BASE_SEND_DELAY_MS  = 1000;
 
   
   class Id {
@@ -387,7 +528,7 @@ namespace FarmBeats {
     }
 #endif
   };
-  
+    
   class LoraModule {
   private:
     // radio configuration parameters
@@ -412,7 +553,7 @@ namespace FarmBeats {
     const int      randomSendDelay_    = LORA_RANDOM_SEND_DELAY_MS;
 
 
-    
+#ifdef SERIAL_INPUT_PROCESSING   
     class StreamBuffer {
 #define INPUT_STREAM_BUFFER_SIZE 20
       const int len_ = INPUT_STREAM_BUFFER_SIZE;
@@ -444,8 +585,8 @@ namespace FarmBeats {
       byte *data() { return buf_; }
       
     } streamBuf_;
+ #endif
     
-    String    myIdStr_;
     uint32_t  myId_;
     unsigned long lastTx_;
     unsigned long nextTxAfter_;
@@ -454,9 +595,18 @@ namespace FarmBeats {
     unsigned char spcrIntialValue_;
     bool pwr_;
 
+    // #ifdef SERIAL_INPUT_PROCESSING
     unsigned char pktBuffer[LoRaClass::MAX_PKT_SIZE];
-    
-    void sleep() { delay(100); }
+    // #endif
+
+#ifdef INDESIGN_PACKET_PROCESSING
+    FB2Srv1DataRecordPkt oneSample_;
+#endif
+    // 7.2. Reset of the Chip
+    // A power-on reset of the SX1276/77/78/79 is triggered at power up. Additionally, a manual reset can be issued by controlling pin 7.
+    // 7.2.1. POR
+    // If the application requires the disconnection of VDD from the SX1276/77/78/79, despite of the extremely low Sleep Mode current, the user should wait for 10 ms from of the end of the POR cycle before commencing communications over the SPI bus. Pin 7 (NRESET) should be left floating during the POR sequence.
+    void sleepAfterPowerOn() { delay(10); }
     
     void disablePower() {
       // LORA Power is negative enable logic on MCU pin
@@ -470,24 +620,34 @@ namespace FarmBeats {
       pwr_ = true;
     }
 
-    // adds header info : just using ascii format for the moment
-    // format: <id>,<len>,<data>
-    int copyDataToStream(Stream &s, byte *data, int dataLen) {
-      String hstr = myIdStr_ + "," + String(dataLen) + ","; 
-      int hlen = hstr.length();
-      int len = hlen + dataLen;
-      
-      hstr.getBytes(pktBuffer, LoRaClass::MAX_PKT_SIZE);
-      memcpy(&pktBuffer[hlen], data, LoRaClass::MAX_PKT_SIZE - dataLen);
-      s.write(pktBuffer, len);
-      
-      return len;
-    }
-
     // FIXME: JA harded coded delay eventually should be adapted to
     // correct duty cycle logic
     unsigned long txDelay() {
       return baseSendDelay_ + random(randomSendDelay_);
+    }
+
+#ifdef SERIAL_INPUT_PROCESSING
+    int copyDataToStream(Stream &s, byte *data, int dataLen) {
+#ifndef RAW
+      // if not raw then we add a simple header as a test
+      // adds header info : just using ascii format for the moment
+      // format: <id>,<len>,<data>
+      String hstr = String(myId_,HEX) + "," + String(dataLen) + ","; 
+      int hlen = hstr.length();
+      int len = hlen + dataLen;
+      hstr.getBytes(pktBuffer, LoRaClass::MAX_PKT_SIZE);
+      memcpy(&pktBuffer[hlen], data,
+	     (dataLen <= (LoRaClass::MAX_PKT_SIZE - hlen)) ? dataLen :
+	     (LoRaClass::MAX_PKT_SIZE - hlen)
+	     );
+#else
+      int len = dataLen;
+      memcpy(pktBuffer, data,
+	     (dataLen <= (LoRaClass::MAX_PKT_SIZE)) ? dataLen :
+	     (LoRaClass::MAX_PKT_SIZE));
+#endif
+      s.write(pktBuffer, len);      
+      return len;
     }
 
     void sendStreamBuf(Stream &ds) {
@@ -507,13 +667,38 @@ namespace FarmBeats {
 	nextTxAfter_ = txDelay();
 
 #ifdef DUMP_TX_PACKET
-	ds.print(myIdStr_ + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n\t");
+	ds.print(String(myId_,HEX) + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n");
 	dumpHex(ds, pktBuffer, sentCnt);
 #endif
 	streamBuf_.reset();
       }
     }
+#endif
 
+#ifdef INDESIGN_PACKET_PROCESSING
+    void sendSampleData(Sensors &sensors, Stream &ds) {
+      UNUSED(ds); // suppress warning if dumping turned off
+      waitForKey(ds, "Press key to send sample", true, true);
+      
+      oneSample_.setValues(sensors.getTS(),
+			   sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
+			   sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
+      
+      theLoRa.beginPacket(implicitHeaderMode_);
+      theLoRa.write(oneSample_.data.raw, sizeof(oneSample_.data.raw));
+      theLoRa.endPacket();
+      
+      txCnt_++;
+      lastTx_ = millis();
+      nextTxAfter_ = txDelay();
+      
+#ifdef DUMP_TX_PACKET
+      ds.print(String(myId_,HEX) + ":>" + String(sizeof(oneSample_.data.raw)) +"[" + String(txCnt_) + "]\r\n");
+      dumpHex(ds, oneSample_.data.raw, sizeof(oneSample_.data.raw));
+#endif
+    }
+#endif
+    
     void onReceive(int packetSize, Stream &s) {
       if (packetSize == 0) return;
       String inStr = "";
@@ -533,7 +718,7 @@ namespace FarmBeats {
 
             
 #ifdef DUMP_RX_PACKET
-        s.print("\r\n" + myIdStr_ + ":<" +
+        s.print("\r\n" + String(myId_,HEX) + ":<" +
 		String(packetSize) + "[" + String(rxCnt_) +
 		"] rssi:" +
 		String(theLoRa.packetRssi())+ "(" +
@@ -543,6 +728,7 @@ namespace FarmBeats {
 	dumpHex(s, pktBuffer, packetSize);
 #endif	
 
+#ifdef SERIAL_INPUT_PROCESSING
       {
 	int payloadIdx=0;
 	// skip header
@@ -554,19 +740,25 @@ namespace FarmBeats {
 	  s.write(&pktBuffer[payloadIdx],packetSize-payloadIdx);
 	}
       }
+#endif
     }
 
   public:
     
     LoraModule() {}
 
-    void setId(uint32_t id) { myId_ = id; myIdStr_ = String(id,HEX); }
+    void setId(uint32_t id) {
+	myId_ = id; 
+#ifdef INDESIGN_PACKET_PROCESSING
+	oneSample_.setSerNo(id);
+#endif
+      }
     uint32_t getId() { return myId_; }
 
 #ifdef LORA_INFO
     void info(Stream &s) {
       s.println("LoraModule():");
-      s.println("\tmyId_: " + String(myId_) + " myIdStr_: " + myIdStr_);
+      s.println("\tmyId_: " + String(myId_));
       s.print("\tPINS: pwrDisable_="); s.print(pwrDisable_, DEC);
       s.print(" reset_="); s.print(reset_, DEC);
       s.print(" ss_="); s.print(ss_, DEC);
@@ -581,7 +773,7 @@ namespace FarmBeats {
       SPI.begin();
       pinMode(pwrDisable_, OUTPUT);
       enablePower();
-      sleep(); // give module time to warm up???
+      sleepAfterPowerOn(); // give module time to warm up???
       lastTx_ = 0;
       nextTxAfter_ = txDelay();
       int rc = theLoRa.begin(freq_);
@@ -602,14 +794,23 @@ namespace FarmBeats {
       return rc;
     }
     	          
-    void loopAction(Stream &s) {
+    void loopAction(Stream &s, Sensors &sensors) {
+#ifdef SERIAL_INPUT_PROCESSING
+	UNUSED(sensors);
       // local input stream processing
       streamBuf_.buffer(s);
-	
+#endif
+      
       // send stream data when and as necessary
       if ((millis() - lastTx_) > nextTxAfter_) {
         // time to send any buffered data
+#ifdef SERIAL_INPUT_PROCESSING
         sendStreamBuf(s);
+#endif
+#ifdef INDESIGN_PACKET_PROCESSING
+	sendSampleData(sensors,s);
+#endif
+	
       }
 
 #ifdef LORA_STATS
@@ -698,7 +899,9 @@ namespace FarmBeats {
 }
 
 
-FarmBeats::Id id;
+FarmBeats::Id         id;
+FarmBeats::Sensors    sensors;
+FarmBeats::Counters   counters;
 FarmBeats::LoraModule lm;
 
 void setup() {
@@ -718,6 +921,8 @@ void setup() {
 
   lm.setId(id.value());
 
+  counters.setup();
+  sensors.setup();
   
 #ifdef LORA_POWER_TEST
   lm.testPower(Serial);
@@ -748,6 +953,7 @@ void setup() {
 }
 
 void loop() {
-  lm.loopAction(Serial);
+  sensors.loopAction();
+  lm.loopAction(Serial,sensors);
 }
 

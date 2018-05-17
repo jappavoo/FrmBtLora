@@ -23,8 +23,6 @@ TX Data Rate DR1 will be used. DR1 supports a maximum payload of 53 bytes, which
 enough to support the Farmbeats message sizes. It also uses a slower data rate, to help 
 with long range operation.
 
-
-
 ************************************************************************************/
 const int ID_PKT_MAX_MSG_SIZE = 53;
 
@@ -134,8 +132,8 @@ LORAWatchDogCountHost_t LORAWatchDogCountPkt2Host(LORAWatchDogCountPkt_t wdc) { 
 
 typedef uint16_t MaxMsgCountPkt_t;
 typedef uint16_t MaxMsgCountHost_t;
-MaxMsgCountPkt_t MaxMsgCountHost2Pkt(MaxMsgCountHost_t mmc)  { return Host16ToLE16(mmc); }
-MaxMsgCountHost_t  MaxMsgCountPkt2Host(MaxMsgCountPkt_t mmc) { return LE16ToHost16(mmc); }
+MaxMsgCountPkt_t  MaxMsgCountHost2Pkt(MaxMsgCountHost_t mmc)  { return Host16ToLE16(mmc); }
+MaxMsgCountHost_t MaxMsgCountPkt2Host(MaxMsgCountPkt_t mmc) { return LE16ToHost16(mmc); }
 
 typedef union {
     uint8_t  raw[9];
@@ -160,16 +158,47 @@ struct  FB2Srv1DataRecordPkt {
   const STX_t     STXVAL     = 0x02;
   const ETX_t     ETXVAL     = 0x03;
   const MsgType_t MSGTYPEVAL = 0xA1;
-  STX_t           STX;
-  SerNoPkt_t      SerNo;
-  MsgType_t       MsgType;
-  TimeStampPkt_t  TimeStamp;
-  SampleData_t    Data;
-  ETX_t           ETX;
-  
-  FB2Srv1DataRecordPkt() : STX(STXVAL), MsgType(MSGTYPEVAL), ETX(ETXVAL) {}
-} __attribute__((packed)); 
+  union {
+    uint8_t raw[sizeof(STX_t) +
+		sizeof(SerNoPkt_t) +
+		sizeof(MsgType_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(SampleData_t) +
+		sizeof(ETX_t)];
+    struct {
+      STX_t           STX;
+      SerNoPkt_t      SerNo;
+      MsgType_t       MsgType;
+      TimeStampPkt_t  TimeStamp;
+      SampleData_t    Data;
+      ETX_t           ETX;
+    } __attribute__((packed)) values;
+    static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
+  } __attribute__((packed)) data;
 
+  void setValues(TimeStampHost_t ts=0,
+		 ADCValHost_t adc0=0, ADCValHost_t adc1=0, ADCValHost_t adc2=0, ADCValHost_t adc3=0,
+		 ADCValHost_t adc4=0, ADCValHost_t adc5=0, ADCValHost_t adc6=0, ADCValHost_t adc7=0) {
+    data.values.TimeStamp = TimeStampHost2Pkt(ts);
+    data.values.Data.values.ADC0 = adc0 ? ADCValHost2Pkt(adc0) : 0;
+    data.values.Data.values.ADC1 = adc1 ? ADCValHost2Pkt(adc1) : 0;
+    data.values.Data.values.ADC2 = adc2 ? ADCValHost2Pkt(adc2) : 0;
+    data.values.Data.values.ADC3 = adc3 ? ADCValHost2Pkt(adc3) : 0;
+    data.values.Data.values.ADC4 = adc4 ? ADCValHost2Pkt(adc4) : 0;
+    data.values.Data.values.ADC5 = adc5 ? ADCValHost2Pkt(adc5) : 0;
+    data.values.Data.values.ADC6 = adc6 ? ADCValHost2Pkt(adc6) : 0;
+    data.values.Data.values.ADC7 = adc7 ? ADCValHost2Pkt(adc7) : 0;
+  }
+
+  void setSerNo(SerNoHost_t sn) {
+    data.values.SerNo = SerNoHost2Pkt(sn);
+  }
+  
+  FB2Srv1DataRecordPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+  }
+} __attribute__((packed)); 
+static_assert(sizeof(FB2Srv1DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
 // STX = Start of Message = 0x02
 // SerNo = 4-byte Serial Number of Farmbeats device [see Section 4.3.1 for more detail]
@@ -199,7 +228,7 @@ struct  FB2Srv2DataRecordPkt {
   SampleData_t    Data2;
   ETX_t           ETX;
 } __attribute__((packed));
-
+static_assert(sizeof(FB2Srv2DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
 // STX = Start of Message = 0x02
 // SerNo = 4-byte Serial Number of Farmbeats device [see Section 4.3.1 for more detail]
@@ -232,7 +261,7 @@ struct Srv2FBAckAndConfigPkt {
   TimeStampPkt_t     TDVal;
   ETX_t              ETX;
 } __attribute__((packed));
-
+static_assert(sizeof(Srv2FBAckAndConfigPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
 // STX = Start of Message = 0x02
 // SerNo = 4-byte Serial Number of Farmbeats device from the sample data message [4.3.1 ]
@@ -261,7 +290,7 @@ struct FB2SrvHealthReportPkt {
   HealthReportData_t Data;
   ETX_t  ETX;
 } __attribute__((packed));
-
+static_assert(sizeof(FB2SrvHealthReportPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
 // STX = Start of Message = 0x02
 // SerNo = 4-byte Serial Number of Farmbeats device [see Section 4.3.1 for more detail]
@@ -275,8 +304,8 @@ struct FB2SrvHealthReportPkt {
 // 4.2.2 Transmission from Server to Farmbeats
 // This message will acknowledge the receipt of the health report from the Farmbeats device.
 struct Srv2FBHealthReportAckPkt {
-  const STX_t     STXVAL = 0x02;
-  const ETX_t     ETXVAL = 0x03;
+  const STX_t     STXVAL     = 0x02;
+  const ETX_t     ETXVAL     = 0x03;
   const MsgType_t MSGTYPEVAL = 0xA6;
   uint8_t         STX;
   SerNoPkt_t      SerNo;
@@ -284,7 +313,7 @@ struct Srv2FBHealthReportAckPkt {
   uint32_t        Timestamp;
   uint8_t         ETX;
 } __attribute__((packed));
-
+static_assert(sizeof(Srv2FBHealthReportAckPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 /*****************************/
 
 #endif  // __ID_PKT_H__

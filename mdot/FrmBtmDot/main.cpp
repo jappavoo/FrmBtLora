@@ -1,8 +1,9 @@
 #include "sx127x_lora.h"
 
-//#define DUMP_PACKETS
+#define RAW
+#define DUMP_PACKETS
 //                mosi,      miso,     sclk,       cs,        rst,      dio0,      dio1
-// SX127x(PinName dio0, PinName dio_1, PinName cs, SPI&, PinName rst);
+// SX127x(PinName dio0, PinName dio_1, PinNa>me cs, SPI&, PinName rst);
 //SX127x radio(LORA_MOSI, LORA_MISO, LORA_SCK, LORA_NSS, LORA_RESET, LORA_DIO0, LORA_DIO1);
 SPI spi(LORA_MOSI, LORA_MISO, LORA_SCK);
 SX127x radio(LORA_DIO0, LORA_DIO1, LORA_NSS, spi, LORA_RESET);
@@ -11,7 +12,23 @@ SX127x_lora lora(radio);
 DigitalOut txctl(LORA_TXCTL);
 DigitalOut rxctl(LORA_RXCTL);
 
-Serial pc(USBTX, USBRX);
+class MySerial : public Serial {
+    public:
+    void  handleWrite(char *buf, int len) {
+       int i=0;
+       while(i != len) {
+        if (writeable()) {
+ //           attach(NULL, Serial::RxIrq);
+            putc(buf[i]); i++;
+            //attach(this, &ATSerial::handleRead, Serial::RxIrq);
+        }
+       }
+     }
+     MySerial(PinName tx, PinName rx) : Serial(tx,rx) {}
+};
+
+Serial dbgSerial(USBTX, USBRX);
+MySerial dataSerial(SERIAL_TX, SERIAL_RX);
 
 void rfsw_callback()
 {
@@ -29,7 +46,7 @@ void rfsw_callback()
 
 char waitForKey(char *msg) 
 {
-    printf("%s : \r\n\t Press any key to continue\r\n", msg);
+    dbgSerial.printf("%s : \r\n\t Press any key to continue\r\n", msg);
     return getchar();
 }
 
@@ -57,19 +74,19 @@ int sx1272_codingRateDenom(uint8_t bits) {
 
 void info()
 {
-   printf("INFO: radio.type=%d", radio.type);
-   printf("\r\n\t\tversion=0x%02x", radio.read_reg(0x42));
-   printf("\r\n\t\tRegOpMode=0x%02x", radio.read_reg(0x01));
-   printf("\r\n\t\tfreq_=%f", radio.get_frf_MHz());
-   printf("\r\n\t\tbandwidth_=%d reg=%d", sx1272_bandwidth(lora.getBw()), lora.getBw());
-   printf("\r\n\t\tspreadingFactor_=%d", lora.getSf());
-   printf("\r\n\t\ttxPower_=? REG_PA_CONFIG=0x%02x", radio.read_reg(0x09));
-   printf("\r\n\t\tLNA=0x%02x", radio.read_reg(0x0c));
-   printf("\r\n\t\tcodingRateDenom_=%d reg=%d", sx1272_codingRateDenom(lora.getCodingRate(false)), lora.getCodingRate(false));
-   printf("\r\n\t\tpreambleLength_=%d",(radio.read_reg(0x20)<<8 | radio.read_reg(0x21)));
-   printf("\r\n\t\tsyncWord_=0x%02x", radio.read_reg(0x39));
-   printf("\r\n\t\tcrc_=%d", lora.getRxPayloadCrcOn());
-   printf("\r\n\t\timplicitHeaderMode=%d\r\n", lora.getHeaderMode());
+   dbgSerial.printf("INFO: radio.type=%d", radio.type);
+   dbgSerial.printf("\r\n\t\tversion=0x%02x", radio.read_reg(0x42));
+   dbgSerial.printf("\r\n\t\tRegOpMode=0x%02x", radio.read_reg(0x01));
+   dbgSerial.printf("\r\n\t\tfreq_=%f", radio.get_frf_MHz());
+   dbgSerial.printf("\r\n\t\tbandwidth_=%d reg=%d", sx1272_bandwidth(lora.getBw()), lora.getBw());
+   dbgSerial.printf("\r\n\t\tspreadingFactor_=%d", lora.getSf());
+   dbgSerial.printf("\r\n\t\ttxPower_=? REG_PA_CONFIG=0x%02x", radio.read_reg(0x09));
+   dbgSerial.printf("\r\n\t\tLNA=0x%02x", radio.read_reg(0x0c));
+   dbgSerial.printf("\r\n\t\tcodingRateDenom_=%d reg=%d", sx1272_codingRateDenom(lora.getCodingRate(false)), lora.getCodingRate(false));
+   dbgSerial.printf("\r\n\t\tpreambleLength_=%d",(radio.read_reg(0x20)<<8 | radio.read_reg(0x21)));
+   dbgSerial.printf("\r\n\t\tsyncWord_=0x%02x", radio.read_reg(0x39));
+   dbgSerial.printf("\r\n\t\tcrc_=%d", lora.getRxPayloadCrcOn());
+   dbgSerial.printf("\r\n\t\timplicitHeaderMode=%d\r\n", lora.getHeaderMode());
 }
 
 void setTxPower(int val) {
@@ -85,38 +102,40 @@ hexdump(unsigned char *start, int bytes)
   for (j=0; j<bytes; ) {
     if ((j%16) == 0) printf("\t%x: ", j);
     for (i=0;(i<16) && ((j+i) < bytes);i++) {
-      printf("%x ", start[j+i]);
+      dbgSerial.printf("%x ", start[j+i]);
     }
-    printf("|");
+    dbgSerial.printf("|");
     for (i=0;(i<16) && ((j+i) < bytes);i++) {
       unsigned char c=start[j+i];
-      if (c>=' ' && c<='~')  printf("%c", c);
-      else  printf(".");
+      if (c>=' ' && c<='~')  dbgSerial.printf("%c", c);
+      else  dbgSerial.printf(".");
     }
-    printf("|\r\n");
+    dbgSerial.printf("|\r\n");
     j+=i;
   }
   return j;
 }
 
+event_callback_t cb;
 
 int main()
 {    
-    pc.baud(115200);
-    
-    pc.printf("\r\nFrmBtmDot 0.2.9\r\n");
+    dbgSerial.baud(115200);
+    dataSerial.baud(115200);
+       
+    dbgSerial.printf("\r\nFrmBtmDot 0.2.14 raw no dump\r\n");
     
     radio.rf_switch.attach(rfsw_callback);
     
-    radio.set_frf_MHz(868.85);
+    radio.set_frf_MHz(866.3);
     lora.enable();
     lora.setBw_KHz(125);
-    setTxPower(7);
+    setTxPower(11);
     // lora.setCodingRate();
     /* Transmit power default set to 6 given testing in short ranges maybe 
        more stable.
        Expore this and set value for field as needed. */
-    lora.setSf(7);
+    lora.setSf(9);
     lora.setRxPayloadCrcOn(true);
 
     /* RFO or PABOOST choice:     */
@@ -130,8 +149,10 @@ int main()
     int idx=0;
     int txCnt=0;
     int rxCnt=0;
+#ifndef RAW    
     char hdr[80];
-    int myId=0;
+#endif
+    int myId=0;    
     int msNextSend=1000;
     Timer tmr;
     
@@ -146,7 +167,7 @@ int main()
 #ifdef DUMP_PACKETS            
             /* dump sent data */
             {
-              printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId, 
+              dbgSerial.printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId,  
                      lora.RegRxNbBytes, rxCnt, 
                      lora.get_pkt_rssi(), lora.RegPktRssiValue, 
                      lora.RegPktSnrValue * 0.25, lora.RegPktSnrValue);
@@ -157,31 +178,40 @@ int main()
                char *pktBuffer=(char *)radio.rx_buf;
                int packetSize = lora.RegRxNbBytes;
                int payloadIdx=0;
+#ifndef RAW              
                // skip header
                for (int i=0; i<2; i++) {
                  while (pktBuffer[payloadIdx]!=',' && payloadIdx < packetSize) { payloadIdx++;}
                  payloadIdx++;
                }
+#endif               
                if (payloadIdx < packetSize) {
-                 write(1,&pktBuffer[payloadIdx],packetSize-payloadIdx);
+                 dataSerial.handleWrite(&pktBuffer[payloadIdx],(packetSize-payloadIdx));
                }
             }
         }
         
-        if (pc.readable()) {
-            buf[idx]=getchar();
+        if (dataSerial.readable()) {
+            buf[idx]=dataSerial.getc();
             idx++;
         }
         
         if (idx && (tmr.read_ms() >= msNextSend)) {
+#ifndef RAW   
           int hb = snprintf(hdr, sizeof(hdr), "%d,%d,", myId, idx);
           int n = hb + idx;
+#else
+          int n = idx;
+#endif                    
           if (n<=sizeof(radio.tx_buf)) {
             lora.RegPayloadLength = n;
             radio.write_reg(REG_LR_PAYLOADLENGTH, lora.RegPayloadLength);
+#ifndef RAW 
             memcpy(radio.tx_buf, hdr, hb);
             memcpy(&radio.tx_buf[hb], buf, idx);
-            
+#else
+            memcpy(radio.tx_buf, buf, idx);
+#endif                        
             /* begin transmission */    
             lora.start_tx(lora.RegPayloadLength);   
         
@@ -195,7 +225,7 @@ int main()
 #ifdef DUMP_PACKETS            
             /* dump sent data */
             { 
-              printf("%d:>%d[%d]\r\n", myId,lora.RegPayloadLength, txCnt);
+              dbgSerial.printf("%d:>%d[%d]\r\n", myId, lora.RegPayloadLength, txCnt);
               hexdump(radio.tx_buf, lora.RegPayloadLength);
             }
 #endif            
