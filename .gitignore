@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# nm dis su
+*.nm
+*.dis
+*.su
+build
+
+# MacOS
+.DS_Store
