@@ -26,12 +26,14 @@ with long range operation.
 ************************************************************************************/
 const int ID_PKT_MAX_MSG_SIZE = 53;
 
-uint32_t Host32ToBE32(uint32_t x);
-uint32_t BE32ToHost32(uint32_t x);
-uint32_t Host32ToLE32(uint32_t x);
-uint32_t LE32ToHost32(uint32_t x);
-uint32_t Host16ToLE16(uint32_t x);
-uint32_t LE16ToHost16(uint32_t x);
+/*
+const uint32_t Host32ToBE32(const uint32_t x);
+const uint32_t BE32ToHost32(const uint32_t x);
+const uint32_t Host32ToLE32(const uint32_t x);
+const uint32_t LE32ToHost32(const uint32_t x);
+const uint32_t Host16ToLE16(const uint32_t x);
+const uint32_t LE16ToHost16(const uint32_t x);
+*/
 
 // 4.3 DATA FIELDS
 
@@ -50,8 +52,8 @@ typedef uint8_t OthRSTCount_t;
 //  Serial Number Field Values: 0x31 0x32 0x33 0x4A
 typedef uint32_t SerNoPkt_t;
 typedef uint32_t SerNoHost_t;
-SerNoPkt_t  SerNoHost2Pkt(SerNoHost_t sn)    { return Host32ToBE32(sn); }
-SerNoHost_t SerNoPkt2Host(SerNoPkt_t sn) { return BE32ToHost32(sn); }
+SerNoPkt_t  SerNoHost2Pkt(const SerNoHost_t sn) { return Host32ToBE32(sn); }
+SerNoHost_t SerNoPkt2Host(const SerNoPkt_t sn)  { return BE32ToHost32(sn); }
 
 // 4.3.2 Timestamp Field
 //  4 byte (little endian) data field indicating timestamp of message. Example:
@@ -59,8 +61,8 @@ SerNoHost_t SerNoPkt2Host(SerNoPkt_t sn) { return BE32ToHost32(sn); }
 //  Timestamp Field Values: 0x02 0x00 0x00 0x00
 typedef uint32_t TimeStampPkt_t;
 typedef uint32_t TimeStampHost_t;
-TimeStampPkt_t  TimeStampHost2Pkt(TimeStampHost_t ts) { return Host32ToLE32(ts); }
-TimeStampHost_t TimeStampPkt2Host(TimeStampPkt_t ts)  { return LE32ToHost32(ts); }
+TimeStampPkt_t  TimeStampHost2Pkt(const TimeStampHost_t ts) { return Host32ToLE32(ts); }
+TimeStampHost_t TimeStampPkt2Host(const TimeStampPkt_t ts)  { return LE32ToHost32(ts); }
 
 // 4.3.3 Sample Data Data Field
 //  8 2-byte ADC values, where each ADC value is little endian.
@@ -69,8 +71,8 @@ TimeStampHost_t TimeStampPkt2Host(TimeStampPkt_t ts)  { return LE32ToHost32(ts);
 //  Sample Data Data Field = 0xCC 0x0C 0x00 0x01 0x56 0x04 0x00 0x00 ... 0x00 0x00
 typedef uint16_t ADCValPkt_t;
 typedef uint16_t ADCValHost_t;
-ADCValPkt_t  ADCValHost2Pkt(ADCValHost_t val) { return Host16ToLE16(val); }
-ADCValHost_t ADCValPkt2Host(ADCValPkt_t val)  { return LE16ToHost16(val); }
+ADCValPkt_t  ADCValHost2Pkt(const ADCValHost_t val) { return Host16ToLE16(val); }
+ADCValHost_t ADCValPkt2Host(const ADCValPkt_t val)  { return LE16ToHost16(val); }
 
 typedef union {
   uint8_t raw[16];
@@ -93,8 +95,8 @@ typedef union {
 //  Sample Data Ack Interval Value Field = 0x58 0x02
 typedef uint16_t IntervalValuePkt_t;
 typedef uint16_t IntervalValueHost_t;
-IntervalValuePkt_t  IntervalValueHost2Pkt(IntervalValueHost_t  iv) { return Host16ToLE16(iv); }
-IntervalValueHost_t IntervalValuePkt2Host(IntervalValuePkt_t iv)   { return LE16ToHost16(iv); }
+IntervalValuePkt_t  IntervalValueHost2Pkt(const IntervalValueHost_t  iv) { return Host16ToLE16(iv); }
+IntervalValueHost_t IntervalValuePkt2Host(const IntervalValuePkt_t iv)   { return LE16ToHost16(iv); }
 
 // 4.3.5 Sample Data Acknowledgement Time/Date Value Field 4 byte (little endian) data
 //  field indicating timestamp.
@@ -122,18 +124,18 @@ IntervalValueHost_t IntervalValuePkt2Host(IntervalValuePkt_t iv)   { return LE16
 //  Health Report Data Field Values: 0x01 0x03 0x00 0x64 0x00 0x32 0x00 0x0A 0x00
 typedef uint16_t LORAResendCountPkt_t;
 typedef uint16_t LORAResendCountHost_t;
-LORAResendCountPkt_t  LORAResendCountHost2Pkt(LORAResendCountHost_t rc) { return Host16ToLE16(rc); }
-LORAResendCountHost_t LORAResendCountPkt2Host(LORAResendCountPkt_t rc)  { return LE16ToHost16(rc); }
+LORAResendCountPkt_t  LORAResendCountHost2Pkt(const LORAResendCountHost_t rc) { return Host16ToLE16(rc); }
+LORAResendCountHost_t LORAResendCountPkt2Host(const LORAResendCountPkt_t rc)  { return LE16ToHost16(rc); }
 
 typedef uint16_t LORAWatchDogCountPkt_t;
 typedef uint16_t LORAWatchDogCountHost_t;
-LORAWatchDogCountPkt_t  LORAWatchDogCountHost2Pkt(LORAWatchDogCountHost_t  wdc) { return Host16ToLE16(wdc); }
-LORAWatchDogCountHost_t LORAWatchDogCountPkt2Host(LORAWatchDogCountPkt_t wdc) { return LE16ToHost16(wdc); }
+LORAWatchDogCountPkt_t  LORAWatchDogCountHost2Pkt(const LORAWatchDogCountHost_t  wdc) { return Host16ToLE16(wdc); }
+LORAWatchDogCountHost_t LORAWatchDogCountPkt2Host(const LORAWatchDogCountPkt_t wdc) { return LE16ToHost16(wdc); }
 
 typedef uint16_t MaxMsgCountPkt_t;
 typedef uint16_t MaxMsgCountHost_t;
-MaxMsgCountPkt_t  MaxMsgCountHost2Pkt(MaxMsgCountHost_t mmc)  { return Host16ToLE16(mmc); }
-MaxMsgCountHost_t MaxMsgCountPkt2Host(MaxMsgCountPkt_t mmc) { return LE16ToHost16(mmc); }
+MaxMsgCountPkt_t  MaxMsgCountHost2Pkt(const MaxMsgCountHost_t mmc)  { return Host16ToLE16(mmc); }
+MaxMsgCountHost_t MaxMsgCountPkt2Host(const MaxMsgCountPkt_t mmc) { return LE16ToHost16(mmc); }
 
 typedef union {
     uint8_t  raw[9];
@@ -176,25 +178,26 @@ struct  FB2Srv1DataRecordPkt {
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
 
-  void setValues(TimeStampHost_t ts=0,
+  // forced inline to ensure this does not require stack space to call
+  inline __attribute__((always_inline)) void setValues(TimeStampHost_t ts=0,
 		 ADCValHost_t adc0=0, ADCValHost_t adc1=0, ADCValHost_t adc2=0, ADCValHost_t adc3=0,
 		 ADCValHost_t adc4=0, ADCValHost_t adc5=0, ADCValHost_t adc6=0, ADCValHost_t adc7=0) {
     data.values.TimeStamp = TimeStampHost2Pkt(ts);
-    data.values.Data.values.ADC0 = adc0 ? ADCValHost2Pkt(adc0) : 0;
-    data.values.Data.values.ADC1 = adc1 ? ADCValHost2Pkt(adc1) : 0;
-    data.values.Data.values.ADC2 = adc2 ? ADCValHost2Pkt(adc2) : 0;
-    data.values.Data.values.ADC3 = adc3 ? ADCValHost2Pkt(adc3) : 0;
-    data.values.Data.values.ADC4 = adc4 ? ADCValHost2Pkt(adc4) : 0;
-    data.values.Data.values.ADC5 = adc5 ? ADCValHost2Pkt(adc5) : 0;
-    data.values.Data.values.ADC6 = adc6 ? ADCValHost2Pkt(adc6) : 0;
-    data.values.Data.values.ADC7 = adc7 ? ADCValHost2Pkt(adc7) : 0;
+    data.values.Data.values.ADC0 = ADCValHost2Pkt(adc0);
+    data.values.Data.values.ADC1 = ADCValHost2Pkt(adc1);
+    data.values.Data.values.ADC2 = ADCValHost2Pkt(adc2);
+    data.values.Data.values.ADC3 = ADCValHost2Pkt(adc3);
+    data.values.Data.values.ADC4 = ADCValHost2Pkt(adc4);
+    data.values.Data.values.ADC5 = ADCValHost2Pkt(adc5);
+    data.values.Data.values.ADC6 = ADCValHost2Pkt(adc6);
+    data.values.Data.values.ADC7 = ADCValHost2Pkt(adc7);
   }
 
-  void setSerNo(SerNoHost_t sn) {
+  inline void setSerNo(SerNoHost_t sn) {
     data.values.SerNo = SerNoHost2Pkt(sn);
   }
   
-  FB2Srv1DataRecordPkt() {
+  inline FB2Srv1DataRecordPkt() {
     data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
   }
 } __attribute__((packed)); 
