@@ -56,17 +56,19 @@
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 #include "FrmBtLoraPkt.h"
 
-#define VERSION "$Id: dfaf7305c9360f12a03c2043ee909a0dc7e1b3af $ 0.3.0 raw"
+#define VERSION "$Id: dfaf7305c9360f12a03c2043ee909a0dc7e1b3af $ 0.3.1 serial"
 
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
-#define DEBUG
+//#define DEBUG
 
 #define RAW
 //#define INDESIGN_PACKET_PROCESSING
 
 #ifndef INDESIGN_PACKET_PROCESSING
 #define SERIAL_INPUT_PROCESSING
+#define DUMP_RX_PACKET
+#define DUMP_TX_PACKET
 #endif
 
 #ifdef INDESIGN_PACKET_PROCESSING
@@ -617,24 +619,10 @@ namespace FarmBeats {
 
 #ifdef SERIAL_INPUT_PROCESSING
     int copyDataToStream(Stream &stm, byte *data, int dataLen) {
-#ifndef RAW
-      // if not raw then we add a simple header as a test
-      // adds header info : just using ascii format for the moment
-      // format: <id>,<len>,<data>
-      String hstr = String(myId_,HEX) + "," + String(dataLen) + ","; 
-      int hlen = hstr.length();
-      int len = hlen + dataLen;
-      hstr.getBytes(pktBuffer, LoRaUtils::MAX_PKT_SIZE);
-      memcpy(&pktBuffer[hlen], data,
-	     (dataLen <= (LoRaUtils::MAX_PKT_SIZE - hlen)) ? dataLen :
-	     (LoRaClass::MAX_PKT_SIZE - hlen)
-	     );
-#else
       int len = dataLen;
       memcpy(pktBuffer, data,
 	     (dataLen <= (LoRaUtils::MAX_PKT_SIZE)) ? dataLen :
 	     (LoRaUtils::MAX_PKT_SIZE));
-#endif
       stm.write(pktBuffer, len);      
       return len;
     }
@@ -715,11 +703,6 @@ namespace FarmBeats {
 
       {
 	int payloadIdx=0;
-	// skip header
-	for (int i=0; i<2; i++) {
-	  while (pktBuffer[payloadIdx]!=',' && payloadIdx < packetSize) { payloadIdx++;}
-	  payloadIdx++;
-	}
 	if (payloadIdx < packetSize) {
 	  Serial.write(&pktBuffer[payloadIdx],packetSize-payloadIdx);
 	}
