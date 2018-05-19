@@ -178,11 +178,15 @@ struct  FB2Srv1DataRecordPkt {
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
 
+  inline __attribute__((always_inline)) void setTimeStamp(TimeStampHost_t ts=0) {
+        data.values.TimeStamp = TimeStampHost2Pkt(ts);
+  }
+  
   // forced inline to ensure this does not require stack space to call
   inline __attribute__((always_inline)) void setValues(TimeStampHost_t ts=0,
 		 ADCValHost_t adc0=0, ADCValHost_t adc1=0, ADCValHost_t adc2=0, ADCValHost_t adc3=0,
 		 ADCValHost_t adc4=0, ADCValHost_t adc5=0, ADCValHost_t adc6=0, ADCValHost_t adc7=0) {
-    data.values.TimeStamp = TimeStampHost2Pkt(ts);
+    setTimeStamp(ts);
     data.values.Data.values.ADC0 = ADCValHost2Pkt(adc0);
     data.values.Data.values.ADC1 = ADCValHost2Pkt(adc1);
     data.values.Data.values.ADC2 = ADCValHost2Pkt(adc2);
@@ -200,6 +204,15 @@ struct  FB2Srv1DataRecordPkt {
   inline FB2Srv1DataRecordPkt() {
     data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
   }
+#if 0
+  // this function avoids the need for using memory by writing data to the stream in the right order and
+  // endianess 
+  static inline write(Stream &s, const SerNoHost_t sn, const TimeStampHost_t ts=0,
+		 const ADCValHost_t adc0=0, const ADCValHost_t adc1=0, const ADCValHost_t adc2=0, const ADCValHost_t adc3=0,
+		 const ADCValHost_t adc4=0, const ADCValHost_t adc5=0, const ADCValHost_t adc6=0, const ADCValHost_t adc7=0) {
+    
+  }
+#endif
 } __attribute__((packed)); 
 static_assert(sizeof(FB2Srv1DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:

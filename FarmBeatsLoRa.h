@@ -56,19 +56,27 @@
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 #include "FrmBtLoraPkt.h"
 
-#define VERSION "$Id: dfaf7305c9360f12a03c2043ee909a0dc7e1b3af $ 0.3.1 serial"
-
+#define VNUM "0.3.2"
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
 //#define DEBUG
 
 #define RAW
-//#define INDESIGN_PACKET_PROCESSING
+#define INDESIGN_PACKET_PROCESSING
 
 #ifndef INDESIGN_PACKET_PROCESSING
+#define MODE "Serial"
 #define SERIAL_INPUT_PROCESSING
 #define DUMP_RX_PACKET
 #define DUMP_TX_PACKET
+#else
+#define MODE "InDesignPkts"
+#endif
+
+#ifdef RAW
+#define VERSION  VNUM " " MODE " raw"
+#else
+#define VERSION  VNUM " " MODE " LoRa V1.1: MAC"
 #endif
 
 #ifdef INDESIGN_PACKET_PROCESSING
@@ -227,10 +235,10 @@ namespace FarmBeats {
   // our own copy of the register name constants from semtech
   class LoRaUtils {
   public:
-#if defined(LORA_STATS) || defined(DUMP_RX_PACKET) || defined(LORA_INFO)
+#if defined(LORA_STATS) || defined(DUMP_RX_PACKET) || defined(LORA_INFO) || defined(LORA_RW)
     // duplicated here as we don't have access to the version
     // in the LoRa Class from the the library 
-    static unsigned char read_reg(uint8_t addr) {
+    static inline unsigned char read_reg(const uint8_t addr) {
       digitalWrite(LORA_L_SS, LOW);
       
         SPI.beginTransaction(SPISettings(8E6, MSBFIRST, SPI_MODE0));
@@ -244,7 +252,7 @@ namespace FarmBeats {
       
     }
 #endif
-
+    
 #ifdef LORA_STATS    
     static uint8_t getIRQFlags() {
       return read_reg(REG_LR_IRQFLAGS);
@@ -328,6 +336,48 @@ namespace FarmBeats {
       Serial.println("\tnumValidHdrsRx:" + String(hdrCnt) + 
               " numValidPktsRx:" + String(pktCnt) +
 		" numPayLoadBytesRx:" + String(bytes));  
+    }
+#endif
+#ifdef LORA_RW
+    // FIXME: Might want to optimize for multiple transfers
+    
+    // duplicated here as we don't have access to the version
+    // in the LoRa Class from the the library 
+    static void write_reg(const uint8_t addr, const uint8_t v) {
+      digitalWrite(LORA_L_SS, LOW);
+      
+        SPI.beginTransaction(SPISettings(8E6, MSBFIRST, SPI_MODE0));
+          SPI.transfer(addr | 0x80);
+          uint8_t val = SPI.transfer(v);
+        SPI.endTransaction();
+      
+      digitalWrite(LORA_L_SS, HIGH);
+
+      return val;
+      
+    }
+
+    static void writePayLoadLength(uint8_t len) {
+      write_reg(REG_LR_PAYLOADLENGTH, len);
+    }
+    static void writePayLoad8(uint8_t v) {
+      write_reg(REG_LR_FIFO,v);
+    }
+    static void writePayLoad16LE(uint16_t v) {
+      writePayLoad8(REG_LR_FIFO,(uint8_t)(v & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>8) & 0xff)); 
+    }
+    static void writePayLoad32LE(uint32_t v) {
+      writePayLoad8(REG_LR_FIFO,(uint8_t)(v & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>8) & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>16) & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>24) & 0xff));
+    }
+    static void writePayLoad32BE(uint32_t v) {
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>24) & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>16) & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)((v>>8) & 0xff));
+      writePayLoad8(REG_LR_FIFO,(uint8_t)(v & 0xff));
     }
 #endif
     static const int MAX_PKT_SIZE = 255;
@@ -572,10 +622,16 @@ namespace FarmBeats {
     } serialBuf_;
  #endif
     
-    uint32_t  myId_;
+    //    uint32_t  myId_;
     unsigned long lastTx_;
     unsigned long nextTxAfter_;
-        
+    // We put this here to colocate all the data members
+    // in one place to make reasoninb about size easier
+  public:
+#ifdef INDESIGN_PACKET_PROCESSING
+    FB2Srv1DataRecordPkt theSample_;
+#endif
+  private:
 #ifndef INDESIGN_PACKET_PROCESSING
     int txCnt_;
     int rxCnt_;
@@ -643,7 +699,7 @@ namespace FarmBeats {
 	nextTxAfter_ = txDelay();
 
 #ifdef DUMP_TX_PACKET
-	Serial.print(String(myId_,HEX) + ":>" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n");
+	Serial.print(String(">" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n");
 	dumpHex(pktBuffer, sentCnt);
 #endif
 	serialBuf_.reset();
@@ -656,6 +712,9 @@ namespace FarmBeats {
       waitForKey("Press key to send sample", true, true);
             
       theLoRa.beginPacket(implicitHeaderMode_);
+#ifndef RAW
+      theLoRa.write(FB_LORA_MHDR.raw);
+#endif
       theLoRa.write(theSample_.data.raw, sizeof(theSample_.data.raw));
       theLoRa.endPacket();
 
@@ -663,12 +722,20 @@ namespace FarmBeats {
       nextTxAfter_ = txDelay();
       
 #ifdef DUMP_TX_PACKET
-      Serial.print(String(myId_,HEX) + ":>" + String(sizeof(theSample_.data.raw))
+      Serial.print(">" +
+		   String(sizeof(theSample_.data.raw
+#ifndef RAW
+				 + sizeof(FB_LORA_MHDR.raw)
+#endif	// RAW				  
+				 ))
 		   +"\r\n");
+#ifndef RAW
+      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX) + "\r\n");
+#endif  // RAW
       dumpHex(theSample_.data.raw, sizeof(theSample_.data.raw));
-#endif
+#endif  // DUMP_TX_PACKET
     }
-#endif
+#endif // INDESIGN_PACKET_PROCESSING
     
     void onReceive(int packetSize) {
       if (packetSize == 0) return;
@@ -711,19 +778,15 @@ namespace FarmBeats {
     }
 
   public:
-#ifdef INDESIGN_PACKET_PROCESSING
-    FB2Srv1DataRecordPkt theSample_;
-#endif
-
     LoraModule() {}
 
     void setId(uint32_t id) {
-	myId_ = id; 
+      //myId_ = id; 
 #ifdef INDESIGN_PACKET_PROCESSING
 	theSample_.setSerNo(id);
 #endif
       }
-    uint32_t getId() { return myId_; }
+    //    uint32_t getId() { return myId_; }
 
 #ifdef LORA_INFO
     void info() {
@@ -788,6 +851,19 @@ namespace FarmBeats {
       onReceive(theLoRa.parsePacket());
     }
 
+    inline __attribute__((always_inline)) void sendSample(unsigned long ts,
+							  uint16_t ADC0,
+							  uint16_t ADC1,
+							  uint16_t ADC2,
+							  uint16_t ADC3,
+							  uint16_t ADC4,
+							  uint16_t ADC5) {
+      // save the data 
+      theSample_.setValues(ts,ADC0,ADC1,ADC2,ADC3,ADC4,ADC5);
+      // attempt to schedule send if we are allowed to based on interval
+      loopAction();
+    }
+    
     // FIXME: JA: SOMETHING IS WRONG.
     //            I still see power on the LoRa Module after calling stop.
     //            Prior to starting the SPI the power tests works.

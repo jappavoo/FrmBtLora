@@ -1,3 +1,4 @@
+#define DUMP_TX_PACKET
 #include "FarmBeatsLora.h"
 
 namespace FarmBeats {
@@ -5,7 +6,11 @@ namespace FarmBeats {
   class Sensors {
   public:
     void setup() {}
-    uint32_t getTS()   { return 0xdeadbeef; }
+    uint32_t getTS()   {
+      unsigned long ts=millis();
+      Serial.println("  sensors.getTS() = " + String(ts, HEX));
+      return ts;
+    }
     uint16_t getADC0() { return 0x0CCC; }
     uint16_t getADC1() { return 0x0100; }
     uint16_t getADC2() { return 0x0456; }
@@ -43,12 +48,6 @@ void setup() {
 #endif
   
   lm.setup();
-
-#ifdef INDESIGN_PACKET_PROCESSING
-  lm.theSample_.setValues(sensors.getTS(),
-			  sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
-			  sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
-#endif
   
   waitForKey("lm.setup() done. Send key to continue");
 
@@ -69,9 +68,22 @@ void setup() {
 #endif
   
   waitForKey("setup(): END: Send key to end");
+#ifdef INDESIGN_PACKET_PROCESSING
+  Serial.println("Send a byte on serial line to trigger send of a packet");
+#endif
 }
 
 void loop() {
-   lm.loopAction();
+#ifdef INDESIGN_PACKET_PROCESSING
+  while (!Serial.available());
+  while(Serial.available()) {
+    Serial.read();
+  }
+  lm.sendSample(sensors.getTS(),
+		sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
+		sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
+#else
+  lm.loopAction();
+#endif  
 }
 
