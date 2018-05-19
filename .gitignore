@@ -35,6 +35,10 @@
 *.nm
 *.dis
 *.su
+*.dwarf
+*.sym
+*.map
+*.prefs
 build
 
 # MacOS
