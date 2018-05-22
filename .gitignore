@@ -39,6 +39,8 @@
 *.sym
 *.map
 *.prefs
+*.sizes
+*.nmdata
 build
 
 # MacOS

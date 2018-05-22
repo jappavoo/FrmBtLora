@@ -61,15 +61,19 @@
 // the debug behaviour
 //#define DEBUG
 
-#define RAW
-#define INDESIGN_PACKET_PROCESSING
+// To set the box define FARM_BEATS_ID on the compile line with -D
+// eg. -DFARM_BREAT_ID={'1','0','N','I'}
+// or in the file as
+//#define  FARM_BEATS_ID {'1','0','N','I'}
 
-#ifndef INDESIGN_PACKET_PROCESSING
+#define RAW
+
+#ifdef  SERIAL_INPUT_PROCESSING
 #define MODE "Serial"
-#define SERIAL_INPUT_PROCESSING
 #define DUMP_RX_PACKET
 #define DUMP_TX_PACKET
 #else
+#define INDESIGN_PACKET_PROCESSING
 #define MODE "InDesignPkts"
 #endif
 
@@ -98,14 +102,6 @@ inline __attribute__((always_inline)) uint32_t LE16ToHost16(const uint32_t x) { 
 
 #include "IDPkt.h"
 #endif
-
-// set next line to true to reset EEPROM id back to null (-1)
-#define EEPROM_RESET_ID false
-
-// if eeprom id is null (-1) then we set the id the following value
-//  get this value from somewhere else ;-)
-//#define MYID 0x00000001
-#define MYID 0x00000002
 
 // turn on/off packet dumping to serial with the following
 //#define DUMP_RX_PACKET 
@@ -518,7 +514,11 @@ namespace FarmBeats {
   class Id {
     static const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
     static const uint32_t NULLID = -1;
-    uint32_t id_;
+    union FM_ID {
+      uint32_t raw;
+      char     ascii[4];
+    } id_;    
+    static_assert(sizeof(FM_ID) == 4, "Bad FM_ID union size");
 
     unsigned int eeoffset() { return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END; }
     
@@ -534,19 +534,20 @@ namespace FarmBeats {
 
   public:
     Id() {
-      if (EEPROM_RESET_ID) resetId();
-      id_ = getEEPromId();
-      if (isNull()) setEEPromId(MYID);
-      id_ = getEEPromId();      
+#ifdef FARM_BEATS_ID
+      resetId();
+      setEEPromId(((union FM_ID){ .ascii = FARM_BEATS_ID }).raw);
+#endif
+      id_.raw = getEEPromId();      
     }
     
-    uint32_t value() { return id_; }
+    uint32_t value() { return id_.raw; }
     
     void resetId() {
       setEEPromId(NULLID);
     }
     
-    bool isNull() { return id_ == NULLID; }
+    bool isNull() { return id_.raw == NULLID; }
     
 #ifdef DUMP_EEPROM
     static void dumpEEProm() {
@@ -621,30 +622,27 @@ namespace FarmBeats {
       
     } serialBuf_;
  #endif
-    
-    //    uint32_t  myId_;
-    unsigned long lastTx_;
-    unsigned long nextTxAfter_;
-    // We put this here to colocate all the data members
-    // in one place to make reasoninb about size easier
+
   public:
 #ifdef INDESIGN_PACKET_PROCESSING
     FB2Srv1DataRecordPkt theSample_;
+#else
+    unsigned char pktBuffer[LoRaUtils::MAX_PKT_SIZE];
 #endif
   private:
+    unsigned long lastTx_;       // 4 bytes
+    unsigned long nextTxAfter_;  // 4 bytes
 #ifndef INDESIGN_PACKET_PROCESSING
-    int txCnt_;
-    int rxCnt_;
+    uint32_t  myId_;             // 4 bytes
+    int txCnt_;                  // 2 bytes
+    int rxCnt_;                  // 2 bytes  
 #endif
-    
-#ifdef LORA_POWER_TEST
+    // We put this here to colocate all the data members
+    // in one place to make reasoninb about size easier
+#ifdef LORA_POWER_TEST           // 1 byte
     bool pwr_;
 #endif
     
-#ifdef SERIAL_INPUT_PROCESSING
-    unsigned char pktBuffer[LoRaUtils::MAX_PKT_SIZE];
-#endif
-
     // 7.2. Reset of the Chip
     // A power-on reset of the SX1276/77/78/79 is triggered at power up. Additionally, a manual reset can be issued by controlling pin 7.
     // 7.2.1. POR
@@ -699,7 +697,7 @@ namespace FarmBeats {
 	nextTxAfter_ = txDelay();
 
 #ifdef DUMP_TX_PACKET
-	Serial.print(String(">" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n");
+	Serial.print(">" + String(sentCnt) +"[" + String(txCnt_) + "]\r\n");
 	dumpHex(pktBuffer, sentCnt);
 #endif
 	serialBuf_.reset();
@@ -780,18 +778,26 @@ namespace FarmBeats {
   public:
     LoraModule() {}
 
-    void setId(uint32_t id) {
-      //myId_ = id; 
+    inline void setId(uint32_t id) {
 #ifdef INDESIGN_PACKET_PROCESSING
 	theSample_.setSerNo(id);
+#else
+	myId_ = id;
 #endif
       }
+    inline uint32_t getId() {
+#ifdef INDESIGN_PACKET_PROCESSING
+	return theSample_.getSerNo();
+#else
+	return myId_;
+#endif
+    }
     //    uint32_t getId() { return myId_; }
 
 #ifdef LORA_INFO
     void info() {
       Serial.println("LoraModule():");
-      Serial.println("\tmyId_: " + String(myId_));
+      Serial.println("\tId: " + String(getId(),HEX));
       Serial.print("\tPINS: pwrDisable_="); Serial.print(pwrDisable_, DEC);
       Serial.print(" reset_="); Serial.print(reset_, DEC);
       Serial.print(" ss_="); Serial.print(ss_, DEC);
@@ -827,7 +833,7 @@ namespace FarmBeats {
       return rc;
     }
     	          
-    void loopAction() {
+    inline void loopAction() {
 #ifdef SERIAL_INPUT_PROCESSING
       // local input stream processing
       serialBuf_.buffer();
@@ -851,6 +857,7 @@ namespace FarmBeats {
       onReceive(theLoRa.parsePacket());
     }
 
+#ifdef INDESIGN_PACKET_PROCESSING
     inline __attribute__((always_inline)) void sendSample(unsigned long ts,
 							  uint16_t ADC0,
 							  uint16_t ADC1,
@@ -863,6 +870,7 @@ namespace FarmBeats {
       // attempt to schedule send if we are allowed to based on interval
       loopAction();
     }
+#endif
     
     // FIXME: JA: SOMETHING IS WRONG.
     //            I still see power on the LoRa Module after calling stop.

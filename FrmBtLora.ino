@@ -1,4 +1,5 @@
-#define DUMP_TX_PACKET
+#define SERIAL_INPUT_PROCESSING
+#define LORA_INFO
 #include "FarmBeatsLora.h"
 
 namespace FarmBeats {
@@ -30,6 +31,14 @@ void setup() {
   while (!Serial);
 
   Serial.println("FrmBtLora version: " + String(VERSION));
+  Serial.println("  sizeof(lm)=" + String(sizeof(lm)));
+#ifdef INDESIGN_PACKET_PROCESSING  
+  Serial.println("  sizeof(lm.theSample_)=" + String(sizeof(lm.theSample_)));
+  Serial.println("  sizeof(lm.theSample_.data.raw)=" + String(sizeof(lm.theSample_.data.raw)));
+  Serial.println("  sizeof(lm.theSample_.data.values)=" + String(sizeof(lm.theSample_.data.values)));
+#endif
+  Serial.println("  sizeof(LoRa)=" + String(sizeof(LoRa)));
+  Serial.println("  sizeof(id)=" + String(sizeof(id)));
   
   waitForKey("setup(): BEGIN: Send key to continue");
 
@@ -50,7 +59,6 @@ void setup() {
   lm.setup();
   
   waitForKey("lm.setup() done. Send key to continue");
-
   
   if (!lm.start()) {
     Serial.println("ERROR: Failed to start Lora Module on.\r\n"

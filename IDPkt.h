@@ -13,10 +13,13 @@ To use the functions defined by this header file an implementation must provide
 the Host[X]To<BE|LE>[X] and <BE|LE>[X]ToHostX functions to take care of byte
 ordering.
 
+// ERRATA:  PACKETS NEED A "CRC" BYTE AT THE END which is the size of the "playload"
+//          Not in Documentation
+
+
 ToDo:
 
-1)  Add constructors
-2)  Add set and get values
+1)  Add set and get values
 
 JA Q: I don't understand this statement 
 TX Data Rate DR1 will be used. DR1 supports a maximum payload of 53 bytes, which is large 
@@ -45,6 +48,7 @@ typedef uint8_t ETX_t;
 typedef uint8_t PwrCycCout_t;
 typedef uint8_t WDRstCount_t;
 typedef uint8_t OthRSTCount_t;
+typedef uint8_t IDLoraCR_t;
 
 // 4.3.1 Serial Number Field
 //  4 byte (big endian) data field indicating serial number of Farmbeats device. Example:
@@ -145,7 +149,7 @@ typedef union {
       OthRSTCount_t          otherResetCount;
       LORAResendCountPkt_t   loRaResendCount;
       LORAWatchDogCountPkt_t loRaWatchdogCount;
-      MaxMsgCountPkt_t     maximumMessageCount;
+      MaxMsgCountPkt_t       maximumMessageCount;
     } __attribute__((packed)) values;
     static_assert(sizeof(raw) == sizeof(values), "HealthReportData_t Bad Size");
 } __attribute__((packed)) HealthReportData_t;
@@ -157,16 +161,20 @@ typedef union {
 // 4.1.1 Transmission from Farmbeats to Server – One Data Record
 // This message will send sample data after each set of samples is taken.
 struct  FB2Srv1DataRecordPkt {
-  const STX_t     STXVAL     = 0x02;
-  const ETX_t     ETXVAL     = 0x03;
-  const MsgType_t MSGTYPEVAL = 0xA1;
+  const STX_t      STXVAL     = 0x02;
+  const ETX_t      ETXVAL     = 0x03;
+  // ERRATA:  PACKETS NEED A "CR" BYTE AT THE END which is hardcoded to 0x0d (13)
+  const IDLoraCR_t IDLORACR  = 0x0D;
+  const MsgType_t  MSGTYPEVAL = 0xA1;
+  
   union {
     uint8_t raw[sizeof(STX_t) +
 		sizeof(SerNoPkt_t) +
 		sizeof(MsgType_t) +
 		sizeof(TimeStampPkt_t) +
 		sizeof(SampleData_t) +
-		sizeof(ETX_t)];
+		sizeof(ETX_t) +
+		sizeof(IDLoraCR_t)];
     struct {
       STX_t           STX;
       SerNoPkt_t      SerNo;
@@ -174,14 +182,24 @@ struct  FB2Srv1DataRecordPkt {
       TimeStampPkt_t  TimeStamp;
       SampleData_t    Data;
       ETX_t           ETX;
+      IDLoraCR_t      IDLoraCR;
     } __attribute__((packed)) values;
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
 
+  inline FB2Srv1DataRecordPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+    data.values.IDLoraCR = IDLORACR;
+  }
+
   inline __attribute__((always_inline)) void setTimeStamp(TimeStampHost_t ts=0) {
         data.values.TimeStamp = TimeStampHost2Pkt(ts);
   }
-  
+
+  inline __attribute__((always_inline)) TimeStampHost_t getTimeStamp() {
+        return TimeStampPkt2Host(data.values.TimeStamp);
+  }
+
   // forced inline to ensure this does not require stack space to call
   inline __attribute__((always_inline)) void setValues(TimeStampHost_t ts=0,
 		 ADCValHost_t adc0=0, ADCValHost_t adc1=0, ADCValHost_t adc2=0, ADCValHost_t adc3=0,
@@ -200,10 +218,11 @@ struct  FB2Srv1DataRecordPkt {
   inline void setSerNo(SerNoHost_t sn) {
     data.values.SerNo = SerNoHost2Pkt(sn);
   }
-  
-  inline FB2Srv1DataRecordPkt() {
-    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+
+  inline int32_t getSerNo() {
+    return SerNoPkt2Host(data.values.SerNo);
   }
+  
 #if 0
   // this function avoids the need for using memory by writing data to the stream in the right order and
   // endianess 
@@ -232,17 +251,39 @@ static_assert(sizeof(FB2Srv1DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max 
 // This message will send sample data after each set of samples is taken, if more than one
 // data record is stored in the Farmbeats device.
 struct  FB2Srv2DataRecordPkt {
-  const STX_t     STXVAL     = 0x02;
-  const ETX_t     ETXVAL     = 0x03;
-  const MsgType_t MSGTYPEVAL = 0xA2;
-  STX_t           STX;
-  SerNoPkt_t      SerNo;
-  MsgType_t       MsgType;
-  TimeStampPkt_t  TimeStamp1;
-  SampleData_t    Data1;
-  TimeStampPkt_t  TimeStamp2;
-  SampleData_t    Data2;
-  ETX_t           ETX;
+  const STX_t      STXVAL     = 0x02;
+  const ETX_t      ETXVAL     = 0x03;
+  // ERRATA:  PACKETS NEED A "CR" BYTE AT THE END which is hardcoded to 0x0d (13)
+  const IDLoraCR_t IDLORACR  = 0x0D;
+  const MsgType_t  MSGTYPEVAL = 0xA2;
+  union {
+    uint8_t raw[sizeof(STX_t) +
+		sizeof(SerNoPkt_t) +
+		sizeof(MsgType_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(SampleData_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(SampleData_t) +
+		sizeof(ETX_t) +
+		sizeof(IDLoraCR_t)];
+    struct {
+      STX_t           STX;
+      SerNoPkt_t      SerNo;
+      MsgType_t       MsgType;
+      TimeStampPkt_t  TimeStamp1;
+      SampleData_t    Data1;
+      TimeStampPkt_t  TimeStamp2;
+      SampleData_t    Data2;
+      ETX_t           ETX;
+      IDLoraCR_t     IDLoraCR;
+    } __attribute__((packed)) values;
+    static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
+  } __attribute__((packed)) data;
+
+  inline FB2Srv2DataRecordPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+    data.values.IDLoraCR = IDLORACR;
+  }
 } __attribute__((packed));
 static_assert(sizeof(FB2Srv2DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
@@ -262,20 +303,46 @@ static_assert(sizeof(FB2Srv2DataRecordPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max 
 // Additionally, this message can update the Farmbeats time/date information, can change
 // the Farmbeats reporting interval, or can reset the Farmbeats device.
 struct Srv2FBAckAndConfigPkt {
-  const STX_t        STXVAL = 0x02;
-  const ETX_t        ETXVAL = 0x03;
-  const MsgType_t    MSGTYPEVAL = 0xA2;
-  STX_t              STX;
-  SerNoPkt_t         SerNo;
-  MsgType_t          MsgType;
-  TimeStampPkt_t     TimeStamp;
-  BoolPkt_t          Rst;
-  BoolPkt_t          Hlth;
-  BoolPkt_t          Intvl;
-  IntervalValuePkt_t IntVal;
-  BoolPkt_t          TD;
-  TimeStampPkt_t     TDVal;
-  ETX_t              ETX;
+  const STX_t      STXVAL = 0x02;
+  const ETX_t      ETXVAL = 0x03;
+  // ERRATA:  PACKETS NEED A "CR" BYTE AT THE END which is hardcoded to 0x0d (13)
+  const IDLoraCR_t IDLORACR  = 0x0D;
+  const MsgType_t  MSGTYPEVAL = 0xA2;
+  union {
+    uint8_t raw[
+		sizeof(STX_t) +              
+		sizeof(SerNoPkt_t) +
+		sizeof(MsgType_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(BoolPkt_t) +
+		sizeof(BoolPkt_t) +
+		sizeof(BoolPkt_t) +
+		sizeof(IntervalValuePkt_t) +
+		sizeof(BoolPkt_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(ETX_t) +
+		sizeof(IDLoraCR_t)];  
+    struct {
+      STX_t              STX;
+      SerNoPkt_t         SerNo;
+      MsgType_t          MsgType;
+      TimeStampPkt_t     TimeStamp;
+      BoolPkt_t          Rst;
+      BoolPkt_t          Hlth;
+      BoolPkt_t          Intvl;
+      IntervalValuePkt_t IntVal;
+      BoolPkt_t          TD;
+      TimeStampPkt_t     TDVal;
+      ETX_t              ETX;
+      IDLoraCR_t          IDLoraCR;
+    } __attribute__((packed)) values;
+    static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
+  } __attribute__((packed)) data;
+  
+  inline Srv2FBAckAndConfigPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+    data.values.IDLoraCR = IDLORACR;
+  }
 } __attribute__((packed));
 static_assert(sizeof(Srv2FBAckAndConfigPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
@@ -296,15 +363,35 @@ static_assert(sizeof(Srv2FBAckAndConfigPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max
 // 4.2.1 Transmission from Farmbeats to Server
 // This message will send health report when requested by a sample data acknowledgement.
 struct FB2SrvHealthReportPkt {
-  const STX_t        STXVAL = 0x02;
-  const ETX_t        ETXVAL = 0x03;
-  const MsgType_t    MSGTYPEVAL = 0xA5;
-  STX_t              STX;
-  SerNoPkt_t         SerNo;
-  MsgType_t          MsgType;
-  TimeStampPkt_t     Timestamp;
-  HealthReportData_t Data;
-  ETX_t  ETX;
+  const STX_t      STXVAL = 0x02;
+  const ETX_t      ETXVAL = 0x03;
+  // ERRATA:  PACKETS NEED A "CR" BYTE AT THE END which is hardcoded to 0x0d (13)
+  const IDLoraCR_t IDLORACR  = 0x0D;
+  const MsgType_t  MSGTYPEVAL = 0xA5;
+  union {
+    uint8_t raw[sizeof(STX_t) +      
+		sizeof(SerNoPkt_t) + 
+		sizeof(MsgType_t) +  
+		sizeof(TimeStampPkt_t) +
+		sizeof(HealthReportData_t) +
+		sizeof(ETX_t)+      
+		sizeof(IDLoraCR_t)];
+    struct {
+      STX_t              STX;
+      SerNoPkt_t         SerNo;
+      MsgType_t          MsgType;
+      TimeStampPkt_t     Timestamp;
+      HealthReportData_t Data;
+      ETX_t              ETX;
+      IDLoraCR_t        IDLoraCR;
+    } __attribute__((packed)) values;
+    static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
+  } __attribute__((packed)) data;
+  
+  inline FB2SrvHealthReportPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+    data.values.IDLoraCR = IDLORACR;
+  }
 } __attribute__((packed));
 static_assert(sizeof(FB2SrvHealthReportPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 //Where:
@@ -320,14 +407,33 @@ static_assert(sizeof(FB2SrvHealthReportPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max
 // 4.2.2 Transmission from Server to Farmbeats
 // This message will acknowledge the receipt of the health report from the Farmbeats device.
 struct Srv2FBHealthReportAckPkt {
-  const STX_t     STXVAL     = 0x02;
-  const ETX_t     ETXVAL     = 0x03;
-  const MsgType_t MSGTYPEVAL = 0xA6;
-  uint8_t         STX;
-  SerNoPkt_t      SerNo;
-  uint8_t         MsgType;
-  uint32_t        Timestamp;
-  uint8_t         ETX;
+  const STX_t      STXVAL     = 0x02;
+  const ETX_t      ETXVAL     = 0x03;
+  // ERRATA:  PACKETS NEED A "CR" BYTE AT THE END which is hardcoded to 0x0d (13)
+  const IDLoraCR_t IDLORACR  = 0x0D;
+  const MsgType_t  MSGTYPEVAL = 0xA6;
+  union {
+    uint8_t raw[sizeof(STX_t) +
+		sizeof(SerNoPkt_t) +
+		sizeof(MsgType_t) +
+		sizeof(TimeStampPkt_t) +
+		sizeof(ETX_t) +
+		sizeof(IDLoraCR_t)];
+    struct {
+      STX_t          STX;
+      SerNoPkt_t     SerNo;
+      MsgType_t      MsgType;
+      TimeStampPkt_t Timestamp;
+      ETX_t          ETX;
+      IDLoraCR_t    IDLoraCR;
+    } __attribute__((packed)) values;
+    static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
+  } __attribute__((packed)) data;
+
+  inline Srv2FBHealthReportAckPkt() {
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
+    data.values.IDLoraCR = IDLORACR;
+  }
 } __attribute__((packed));
 static_assert(sizeof(Srv2FBHealthReportAckPkt) <= ID_PKT_MAX_MSG_SIZE, "Exceeds Max Packet Size");
 /*****************************/

@@ -25,8 +25,11 @@
 #        $ ./mk.sh ${HOME}Applications/Arduino-latest.app/Contents/Java/arduino-builder upload /dev/cu.usbmodem141411
 
 
-usage="USAGE: $0 <path to arduino-builder> [cmd]
-   cmd: compile|upload|info|clean  default is compile"
+usage="
+USAGE: $0 <path to arduino-builder> [compile|upload|info|clean]
+       default is compile
+         compile [4 character id]
+         upload  <serial port of arduino> [4 character id]"
 
 sketch=$PWD
 sketch=${sketch##*/}.ino
@@ -72,6 +75,17 @@ if [[ $cmd == compile ]]; then
     $0 $1 clean
     mkdir build
 
+    id=$3
+    
+    if [[ ! -z $id ]]; then
+	if (( ${#id} != 4 )); then
+	    echo "ERROR:  id must be a 4 characters long"
+	    echo $usage
+	    exit -1
+	fi
+	echo "Image will be compiled to set box ID to $id"
+	MID="\"-DFARM_BEATS_ID={'${id:3:1}','${id:2:1}','${id:1:1}','${id:0:1}'}\""
+    fi
 #	    -prefs=compiler.cpp.extra_flags="-DJADEF" \
 #	    -prefs=compiler.c.extra_flags="-DJADEF" \
 
@@ -90,7 +104,7 @@ if [[ $cmd == compile ]]; then
 	    -prefs=runtime.tools.avr-gcc.path=${toolsToolChain} \
 	    -prefs=runtime.tools.avrdude.path=${toolsToolChain} \
 	    -verbose \
-	    -prefs=build.extra_flags="-fstack-usage" \
+	    -prefs=build.extra_flags="-fstack-usage $MID" \
 	    -prefs=compiler.c.elf.extra_flags="-Xlinker -Map=$sketch.map" \
 	    $src > ${sketch}.prefs
 
@@ -109,7 +123,7 @@ if [[ $cmd == compile ]]; then
 	    -prefs=runtime.tools.avr-gcc.path=${toolsToolChain} \
 	    -prefs=runtime.tools.avrdude.path=${toolsToolChain} \
 	    -verbose \
-	    -prefs=build.extra_flags="-fstack-usage" \
+	    -prefs=build.extra_flags="-fstack-usage $MID" \
 	    -prefs=compiler.c.elf.extra_flags="-Xlinker -Map=$sketch.map -Xlinker --cref" \
 	    $src
   $0 $1 info
@@ -117,12 +131,13 @@ fi
 
 if [[ $cmd == upload ]]; then
     port=$3
+    id=$4
     baud=115200
     if [[ -z $port ]]; then
 	echo "upload requires that you also pass in the port you would have selected in the ide: eg. /dev/cu.usbmodem141411"
 	exit -1
     fi
-    $0 $1 compile
+    $0 $1 compile $4
     if [[ ! -a build/$hex ]]; then
 	echo "ERROR: can't find build/$hex.  Try first getting a clean compile ;-)"
 	exit -1
@@ -143,12 +158,16 @@ if [[ $cmd == info ]]; then
 	echo "ERROR: can't find build/$elf.  Try compiling first"
 	exit -1
     fi
+    echo "dumping sizes"
+    $toolsToolChain/bin/avr-size build/$elf > ${sketch}.sizes
     echo "Disassmbling"
     $toolsToolChain/bin/avr-objdump -dS build/$elf > ${sketch}.dis
     echo "Extracting symbol table"
     $toolsToolChain/bin/avr-readelf -s build/$elf > ${sketch}.sym
     echo "Running nm"
     $toolsToolChain/bin/avr-nm -C --print-size --size-sort --line-numbers build/$elf > ${sketch}.nm
+    echo "Running nm for data only"
+    $toolsToolChain/bin/avr-nm -Crtd --size-sort build/$elf  | grep -i ' [dbv] ' > ${sketch}.nmdata
     echo "Extracting dwarf info"
     $toolsToolChain/bin/avr-objdump --dwarf=info build/$elf > ${sketch}.dwarf
 fi
@@ -156,5 +175,5 @@ fi
 	  
 if [[ $cmd == clean ]]; then
     [[ -a build ]] && rm -rf build
-    rm *.dis *.nm *.sym *.map *.dwarf *.prefs *.su
+    rm *.dis *.nm *.sym *.map *.dwarf *.prefs *.su *.sizes *.nmdata
 fi
