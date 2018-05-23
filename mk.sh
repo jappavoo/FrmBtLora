@@ -28,7 +28,7 @@
 usage="
 USAGE: $0 <path to arduino-builder> [compile|upload|info|clean]
        default is compile
-         compile [4 character id]
+         compile
          upload  <serial port of arduino> [4 character id]"
 
 sketch=$PWD
@@ -137,7 +137,11 @@ if [[ $cmd == upload ]]; then
 	echo "upload requires that you also pass in the port you would have selected in the ide: eg. /dev/cu.usbmodem141411"
 	exit -1
     fi
-    $0 $1 compile $4
+    if [[ ! -z $id ]]; then
+	echo "compiling uploading with hardcode id=$id to write eeprom"
+    fi
+
+    $0 $1 compile $id
     if [[ ! -a build/$hex ]]; then
 	echo "ERROR: can't find build/$hex.  Try first getting a clean compile ;-)"
 	exit -1
@@ -151,6 +155,12 @@ if [[ $cmd == upload ]]; then
 	 -b${baud} \
 	 -D \
 	 -Uflash:w:build/$hex:i
+    if [[ ! -z $id ]]; then
+       echo "sleep 5s for id to be written to eeprom"
+       sleep 5
+       echo "Recompiling and uploading final binary WITHOUT hardcoded ID"
+       $0 $1 upload $port
+    fi
 fi
 
 if [[ $cmd == info ]]; then

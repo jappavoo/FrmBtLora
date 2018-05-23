@@ -1,5 +1,9 @@
+// comment next line if you want to
+// play with indesign packet processing
+// rather than using it as lora sniffer
 #define SERIAL_INPUT_PROCESSING
 #define LORA_INFO
+//#define DUMP_EEPROM
 #include "FarmBeatsLora.h"
 
 namespace FarmBeats {

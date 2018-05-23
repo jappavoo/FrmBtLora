@@ -513,13 +513,13 @@ namespace FarmBeats {
   
   class Id {
     static const int EEPROM_ID_OFFSET_FROM_END=sizeof(uint32_t);
-    static const uint32_t NULLID = -1;
+    static const uint32_t NULLID       = 0xffffffff; // 0xffffffff (-1)
+    static const uint32_t NULLID_ASCII = 0x46464646; // 'FFFF'
     union FM_ID {
       uint32_t raw;
       char     ascii[4];
     } id_;    
     static_assert(sizeof(FM_ID) == 4, "Bad FM_ID union size");
-
     unsigned int eeoffset() { return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END; }
     
     void setEEPromId(uint32_t val) {
@@ -538,7 +538,15 @@ namespace FarmBeats {
       resetId();
       setEEPromId(((union FM_ID){ .ascii = FARM_BEATS_ID }).raw);
 #endif
-      id_.raw = getEEPromId();      
+      id_.raw = getEEPromId();
+#ifdef INDESIGN_PACKET_PROCESSING
+      if (id_.raw == NULLID || id_.raw == 0) {
+	// just incase the id was not set try to behave gracefully
+	// protocol requires an ascii id value 
+	setEEPromId(NULLID_ASCII);
+	id_.raw=getEEPromId();
+      }
+#endif
     }
     
     uint32_t value() { return id_.raw; }
