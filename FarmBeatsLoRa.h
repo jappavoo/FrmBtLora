@@ -3,31 +3,34 @@
 /*
   FarmBeats LoRa Arduino Code for Indian Sensor Box
 
-  This code is hard coded around the Semtech sx1276 which is the radio module on the 
-  LORA 868Mhz 8X1276 RF MODULE from ROBOKITS INDIA RKI-2726 
+  This code is hard coded around the Semtech sx1276 which is the radio module on
+  the LORA 868Mhz 8X1276 RF MODULE from ROBOKITS INDIA RKI-2726 
 
-  NOTE THE MDOT uses sx1272 which is different from the sx1276 that the Indian Farm 
-      Beats sensor box uses 
-  Requirements:
-       standard SPI library
-       standar EEPROM library
-       LoRa -- the repository include a version to use it link the libraries/LoRa directory
-               to your arduino libraries directory
+  NOTE THE MDOT uses sx1272 which is different from the sx1276 that
+      the Indian Farm Beats sensor box uses 
+      Requirements: 
+        standard SPI library 
+        standard EEPROM library 
+        LoRa -- the repository include a
+                version to use it link the libraries/LoRa directory 
+                to your arduino libraries directory
 
   Known Issues:
 
-     0)  I have included a submodule checkout of the official semtech sx1276 code
-         However I am only using it for the register headerfile.  This code
-         provides a wealth of knowledge on how to properly configure and use the radio.
-         One should carefully consider adopting its best practices for settup the
-         radio in context of the FarmBeats depolyment scenario.  I have not done this!
+     0) I have included a submodule checkout of the official semtech
+         sx1276 code. However I am only using it for the register
+         headerfile.  This code provides a wealth of knowledge on how
+         to properly configure and use the radio. One should carefully
+         consider adopting its best practices for settup the radio in
+         context of the FarmBeats depolyment scenario.  I have not
+         done this!
 
      1)  See FIXME in LoraModule::stop()
            I still see power on the LoRa Module after calling stop.
            Prior to starting the SPI the power tests works.
-           However, after using SPI (eg. calling start()) asserting pin 16 high does
-           cause R6 and the LORA_BJT to see the right value  but the VCC pin of the 
-           LoRa stays high :-(
+           However, after using SPI (eg. calling start()) asserting pin 16 high 
+           does cause R6 and the LORA_BJT to see the right value  but the VCC 
+           pin of the LoRa stays high :-(
 
      2)  Need to optimize space, performance and power consumption
          I have only done some basic things keep footprint small.  
@@ -36,9 +39,10 @@
               confirmed and likely improved.
 
          Having read the RFM95/96/97/98(W) manual there are many things we could
-         do to optimize the performance and power by carefully customizing things to
-         our environment.  
-         Not sure it is worth this includes potentially using implicity header mode
+         do to optimize the performance and power by carefully customizing 
+         things to our environment.  
+         Not sure it is worth this includes potentially using implicity header 
+         mode
 
      3)  No Duty cycle logic.
            See txDelay():  right now sender buffers data from an input
@@ -56,7 +60,7 @@
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 #include "FrmBtLoraPkt.h"
 
-#define VNUM "0.3.2"
+#define VNUM "0.3.3"
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
 //#define DEBUG
@@ -95,10 +99,18 @@ inline __attribute__((always_inline)) uint32_t BE32ToHost32(const uint32_t x) {
     return x << 24U | x >> 24U |                  // xchg first and last byte
         (x & 0xFF00) << 8U |(x & 0xFF0000) >> 8U; // xchg first and last byte
 }
-inline __attribute__((always_inline)) uint32_t Host32ToLE32(const uint32_t x) { return x; }
-inline __attribute__((always_inline)) uint32_t LE32ToHost32(const uint32_t x) { return x; }
-inline __attribute__((always_inline)) uint32_t Host16ToLE16(const uint32_t x) { return x; }
-inline __attribute__((always_inline)) uint32_t LE16ToHost16(const uint32_t x) { return x; }
+inline __attribute__((always_inline)) uint32_t Host32ToLE32(const uint32_t x) {
+  return x;
+}
+inline __attribute__((always_inline)) uint32_t LE32ToHost32(const uint32_t x) {
+  return x;
+}
+inline __attribute__((always_inline)) uint32_t Host16ToLE16(const uint32_t x) {
+  return x;
+}
+inline __attribute__((always_inline)) uint32_t LE16ToHost16(const uint32_t x) {
+  return x;
+}
 
 #include "IDPkt.h"
 #endif
@@ -278,9 +290,10 @@ namespace FarmBeats {
     static int getSnrPktValue() { return read_reg(REG_LR_PKTSNRVALUE); }
 #endif
 #ifdef LORA_INFO
-    static void info(long freq, long bw, int sf, int txPwr, int crd, long preLen,
-	      int sw, bool crc, bool iMode) {
-            Serial.print("\r\n\t\tversion=" + String(read_reg(REG_LR_VERSION),HEX));
+    static void info(long freq, long bw, int sf, int txPwr, int crd,
+		     long preLen, int sw, bool crc, bool iMode) {
+            Serial.print("\r\n\t\tversion=" +
+			 String(read_reg(REG_LR_VERSION),HEX));
       Serial.print("\r\n\t\tRegOpMode=" + String(read_reg(REG_LR_OPMODE),HEX));
       Serial.print("\r\n\t\tfreq_=" + String(freq, DEC) + " reg=" +
 	      String(((uint32_t)read_reg(REG_LR_FRFMSB)) << 16 |
@@ -290,8 +303,8 @@ namespace FarmBeats {
 	      String(((read_reg(REG_LR_MODEMCONFIG1)>>4)&0xf),DEC));
       Serial.print("\r\n\t\tspreadingFactor_=" + String(sf, DEC) + " reg=" +
 	      String((read_reg(REG_LR_MODEMCONFIG2)>>4)&0xf,DEC));
-      Serial.print("\r\n\t\ttxPower_=" + String(txPwr, DEC) + " REG_PA_CONFIG=" +
-	      String(read_reg(REG_LR_PACONFIG),HEX));
+      Serial.print("\r\n\t\ttxPower_=" + String(txPwr, DEC) + " REG_PA_CONFIG="
+		   + String(read_reg(REG_LR_PACONFIG),HEX));
       Serial.print("\r\n\t\tLNA=" + String(read_reg(REG_LR_LNA),HEX));
       Serial.print("\r\n\t\tcodingRateDenom_=" + String(crd, DEC) + " reg=" +
 	      String((read_reg(REG_LR_MODEMCONFIG1) >> 1) & 0x3,DEC));
@@ -383,7 +396,8 @@ namespace FarmBeats {
   
   // Default communication parameters
 
-  //  I have consulted various documents here are some snipts that I found useful
+  //  I have consulted various documents here are some snipts that I found
+  //  useful
   //  
   //   b
   //   https://www.thethingsnetwork.org/docs/lorawan/frequencies-by-country.html
@@ -441,9 +455,10 @@ namespace FarmBeats {
   // 1426 2.10.3 IN865-867 Data Rate and End-device Output Power Encoding
   // 1427 There is no dwell time or duty-cycle limitation for the
   //      INDIA 865-867 PHY layer. The
-  // 1428 TxParamSetupReq MAC command is not implemented by INDIA 865-867 devices.
-  // 1429 The following encoding is used for Data Rate (DR) and End-device Output
-  //      Power (TXPower)
+  // 1428 TxParamSetupReq MAC command is not implemented by INDIA 865-867
+  //      devices.
+  // 1429 The following encoding is used for Data Rate (DR) and End-device
+  //      Output Power (TXPower)
   // 1430 in the INDIA 865-867 band:
   // 1431
   // DataRate Configuration          Indicative physical
@@ -491,7 +506,7 @@ namespace FarmBeats {
   const int  LORA_TX_POWER_LEVEL       = 11;
   const int  LORA_CODING_RATE_DENOM    = 5;    // 4/5
   const long LORA_PREAMBLE_LENGTH      = 8;
-  const int  LORA_SYNC_WORD            = 0x12;  // 0x34 is for LoRaWan using 0x12 
+  const int  LORA_SYNC_WORD            = 0x12; // 0x34 is for LoRaWan using 0x12 
   const bool LORA_CRC                  = true;
   // By default we operate in explicit header mode:
   // The packets include a hardware generated header
@@ -500,7 +515,8 @@ namespace FarmBeats {
 
   // Explicity mode packet structure is as follows:
   // <preamble> <header,headr_crc> <payload> [16 bit payload_crc]
-  // header: <payload len> <fwd error correcton code rate> <yes/no payload_crc present>
+  // header:
+  // <payload len> <fwd error correcton code rate> <yes/no payload_crc present>
   // error correcton code rate for header is 4/8
   // as indicated the payload code rate is specified in the header
 
@@ -520,7 +536,9 @@ namespace FarmBeats {
       char     ascii[4];
     } id_;    
     static_assert(sizeof(FM_ID) == 4, "Bad FM_ID union size");
-    unsigned int eeoffset() { return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END; }
+    unsigned int eeoffset() {
+      return  EEPROM.length() - EEPROM_ID_OFFSET_FROM_END;
+    }
     
     void setEEPromId(uint32_t val) {
       EEPROM.put(eeoffset(), val);
@@ -601,7 +619,7 @@ namespace FarmBeats {
     class SerialBuffer {
 #define INPUT_STREAM_BUFFER_SIZE 20
       const int len_ = INPUT_STREAM_BUFFER_SIZE;
-      byte buf_[INPUT_STREAM_BUFFER_SIZE];      // can't use const member yet :-(
+      byte buf_[INPUT_STREAM_BUFFER_SIZE];     // can't use const member yet :-(
       int  end_;
     public:
       SerialBuffer() : end_(0) {}
@@ -652,9 +670,14 @@ namespace FarmBeats {
 #endif
     
     // 7.2. Reset of the Chip
-    // A power-on reset of the SX1276/77/78/79 is triggered at power up. Additionally, a manual reset can be issued by controlling pin 7.
+    // A power-on reset of the SX1276/77/78/79 is triggered at power up.
+    // Additionally, a manual reset can be issued by controlling pin 7.
     // 7.2.1. POR
-    // If the application requires the disconnection of VDD from the SX1276/77/78/79, despite of the extremely low Sleep Mode current, the user should wait for 10 ms from of the end of the POR cycle before commencing communications over the SPI bus. Pin 7 (NRESET) should be left floating during the POR sequence.
+    // If the application requires the disconnection of VDD from the
+    // SX1276/77/78/79, despite of the extremely low Sleep Mode current,
+    // the user should wait for 10 ms from of the end of the POR cycle before
+    // commencing communications over the SPI bus. Pin 7 (NRESET) should be left
+    // floating during the POR sequence.
     void sleepAfterPowerOn() { delay(10); }
     
     void disablePower() {
@@ -736,7 +759,8 @@ namespace FarmBeats {
 				 ))
 		   +"\r\n");
 #ifndef RAW
-      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX) + "\r\n");
+      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX)
+		   + "\r\n");
 #endif  // RAW
       dumpHex(theSample_.data.raw, sizeof(theSample_.data.raw));
 #endif  // DUMP_TX_PACKET
@@ -811,8 +835,9 @@ namespace FarmBeats {
       Serial.print(" ss_="); Serial.print(ss_, DEC);
       Serial.print(" dio0_="); Serial.print(dio0_, DEC);
       Serial.print("\r\n\tRADIO: ");
-      LoRaUtils::info(freq_, bandwidth_, spreadingFactor_, txPower_, codingRateDenom_,
-		      preambleLength_, syncWord_, crc_, implicitHeaderMode_);
+      LoRaUtils::info(freq_, bandwidth_, spreadingFactor_, txPower_,
+		      codingRateDenom_, preambleLength_, syncWord_, crc_,
+		      implicitHeaderMode_);
     }
 #endif
     
@@ -937,8 +962,8 @@ namespace FarmBeats {
       
       Serial.print("isOn(): ");
       Serial.println(isOn());
-      Serial.println("\tPOWER ON: you should be able to measure 3.3v on LORA_PWR"
-		" pin 4 of LORA_R");
+      Serial.println("\tPOWER ON: you should be able to measure 3.3v on"
+		     " LORA_PWR pin 4 of LORA_R");
 
       
       waitForKey("Send key to Turn OFF");
@@ -948,8 +973,8 @@ namespace FarmBeats {
       
       Serial.print("isOn(): ");
       Serial.println(isOn());
-      Serial.println("\t POWER OFF: you should be able to measure LOW v on LORA_PWR"
-		" pin 4 of LORA_R");
+      Serial.println("\t POWER OFF: you should be able to measure LOW v on"
+		     " LORA_PWR pin 4 of LORA_R");
       
       waitForKey("Send key to end testPower");
       
