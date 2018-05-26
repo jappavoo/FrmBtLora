@@ -92,14 +92,17 @@ void setup() {
       Serial.println("'s' to send of a Data Sample packet\r\n"
 #ifdef TEST_SEND_ACK
 		 "'a <id> <ts>' to send Ack Packet\r\n"
+		 "'A' toggle Auto Ack mode\r\n"
 #endif
 		 );
 #endif
   waitForKey("setup(): END: Send key to end");
 }
 
+bool doAck=false;
 void loop() {
 #ifdef INDESIGN_PACKET_PROCESSING
+
   if (Serial.available()) {
     switch (Serial.read()) {
     case 's':
@@ -127,6 +130,11 @@ void loop() {
 		     String(ts,HEX)+ "\r\n");
       lm.testSendAck(id, ts);
       break;
+    case 'A':
+      if (doAck) doAck=false; else doAck=true;
+      Serial.println("AutoAck: " + String(doAck));
+      break;
+      
 #endif
     default:
       while (Serial.available()) Serial.read();
@@ -138,7 +146,7 @@ void loop() {
 		 );
   }
 #ifdef DUMP_RX_PACKET
-  lm.sniff();
+  lm.sniff(doAck);
 #endif  
 #else
   lm.loopAction();

@@ -879,7 +879,7 @@ namespace FarmBeats {
     }
 	
     public:
-    void sniff() {
+    void sniff(bool ack) {
       int pktLen = theLoRa.parsePacket();
 
       if (pktLen == 0) return;
@@ -906,12 +906,14 @@ namespace FarmBeats {
 	  theSample_.data.raw[i] = theLoRa.read();
 	}
 	dumpSample();
-#ifdef AUTO_ACK
 #ifdef TEST_SEND_ACK
-        testSendAck(theSample_.getSerNo(), theSample_.getTimeStamp());
-	Serial.println("Sent Ack");
+	if (ack) {
+	  testSendAck(theSample_.getSerNo(), theSample_.getTimeStamp());
+	  Serial.println("Sent Ack");
+	}
+#else
+	UNUSED(ack);
 #endif
-#endif	
 	theSample_.reset();
 	theSample_.setSerNo(sn);
 	}
