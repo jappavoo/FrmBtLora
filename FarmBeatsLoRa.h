@@ -860,6 +860,84 @@ namespace FarmBeats {
 		   + String(LoRaUtils::getSnrPktValue()) + ")\r\n\t");
       readAndDumpHex(theLoRa, packetLen);
     }
+
+    void dumpSample() {
+      dumpHex(theSample_.data.raw, sizeof(theSample_.data.raw));
+      if (theSample_.data.values.MsgType == theSample_.MSGTYPEVAL) {
+	Serial.print("\tMsgType Match SerNo: ");
+	const int so = offsetof(FB2Srv1DataRecordPkt::DATA::VALUES, SerNo);
+	for (unsigned int i=so; i<so+sizeof(theSample_.data.values.SerNo);
+	     i++) {
+	  char c = theSample_.data.raw[i];
+	  Serial.print(c);
+	}
+	Serial.print(" TS: " + String(theSample_.data.values.TimeStamp)
+		     + "\r\n");
+      } else {
+	Serial.print("\t * MsgType DOES NOT MATCH * \r\n");
+      }
+    }
+	
+    public:
+    void sniff() {
+      int pktLen = theLoRa.parsePacket();
+
+      if (pktLen == 0) return;
+      
+      Serial.print("\r\n:<" +
+		   String(pktLen) + "rssi:" +
+		   String(theLoRa.packetRssi())+ "(" +
+		   String(LoRaUtils::getRssiPktValue()) + ") snr:" +
+		   String(theLoRa.packetSnr()) + "("
+		   + String(LoRaUtils::getSnrPktValue()) + ")\r\n\t");
+
+#ifndef RAW
+      union LORA_PHY_MHDR phyhdr;
+      phhdr.raw = theLoRa.read();
+      pktLen--;
+      Serial.print("LoRa v1.1 PHYHDR: " + String(phyhdr.raw, HEX) + "\r\n");
+#endif  // RAW
+      switch (pktLen) {
+      case sizeof(FB2Srv1DataRecordPkt::data):
+	{
+	Serial.print("\tFB2Srv1DataRecordPkt?\r\n");
+	const uint32_t sn = theSample_.getSerNo();
+	for (int i=0; i<pktLen; i++) {
+	  theSample_.data.raw[i] = theLoRa.read();
+	}
+	dumpSample();
+#ifdef AUTO_ACK
+#ifdef TEST_SEND_ACK
+        testSendAck(theSample_.getSerNo(), theSample_.getTimeStamp());
+	Serial.println("Sent Ack");
+#endif
+#endif	
+	theSample_.reset();
+	theSample_.setSerNo(sn);
+	}
+	break;
+      case sizeof(FB2Srv2DataRecordPkt::data):
+	  Serial.print("\tFB2Srv2DataRecordPkt?\r\n");
+	  readAndDumpHex(theLoRa, pktLen);
+	  break;
+      case sizeof(Srv2FBAckAndConfigPkt::data):
+	  Serial.print("\tSrv2FBAckAndConfigPkt?\r\n");
+	  readAndDumpHex(theLoRa, pktLen);
+	break;
+      case sizeof(FB2SrvHealthReportPkt::data):
+	  Serial.print("\tFB2SrvHealthReportPkt?\r\n");
+	  readAndDumpHex(theLoRa, pktLen);
+	break;
+      case sizeof(Srv2FBHealthReportAckPkt::data):
+	  Serial.print("\tSrv2FBHealthReportAckPkt\r\n");
+	  readAndDumpHex(theLoRa, pktLen);
+	break;
+      default:
+	Serial.print("UNKNOWN size");
+	readAndDumpHex(theLoRa, pktLen);
+      }
+    }
+    private:
 #endif  // DUMP_RX_PACKET
 
     // busy poll of lora for ack this could be substantially optimized
@@ -915,6 +993,7 @@ namespace FarmBeats {
       Serial.print("]\r\n");
 #endif
     }
+
 #endif // INDESIGN_PACKET_PROCESSING
 
 #ifdef SERIAL_INPUT_PROCESSING 
@@ -1035,7 +1114,7 @@ namespace FarmBeats {
       // Caller is responsible for testing critera for sending and calling
       // loopAction only when they really mean too!  Eg.
       //   1) New data has been recorded
-      //   2) Sample data has not been acked
+      //   2) or Sample data has not been acked
       if ((millis() - lastTx_) > nextTxAfter_) {
 	  sendSampleData();
 	  // try and receive an ack for the sample sent

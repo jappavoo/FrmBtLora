@@ -7,6 +7,7 @@
 #define DUMP_RX_PACKET
 #define LORA_INFO
 #define IND_ACK_TIMEOUT_MS 30000
+#define AUTO_ACK
 //#define DUMP_EEPROM
 #include "FarmBeatsLora.h"
 
@@ -86,41 +87,59 @@ void setup() {
   lm.status();
   waitForKey("lm.status() done. Send key to continue");
 #endif
-  
+
+#ifdef INDESIGN_PACKET_PROCESSING
+      Serial.println("'s' to send of a Data Sample packet\r\n"
+#ifdef TEST_SEND_ACK
+		 "'a <id> <ts>' to send Ack Packet\r\n"
+#endif
+		 );
+#endif
   waitForKey("setup(): END: Send key to end");
 }
 
 void loop() {
 #ifdef INDESIGN_PACKET_PROCESSING
-  Serial.println("'s' to send of a Data Sample packet\r\n" 
-		 "'a <id> <ts>' to send Ack Packet\r\n");
-  while (!Serial.available());
-  
-  switch (Serial.read()) {
-  case 's':
-    lm.sendSample(sensors.getTS(),
-		  sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
-		  sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
-    break;
-  case 'a':
-    uint32_t id;
-    uint32_t ts;
+  if (Serial.available()) {
+    switch (Serial.read()) {
+    case 's':
+      lm.sendSample(sensors.getTS(),
+		    sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
+		    sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
+      if (lm.isSampleAcked()) Serial.println("   * ACK: GOOD *   ");
+      else Serial.println("   * ACK: NONE OR BAD*   ");
+      
+      break;
+#ifdef TEST_SEND_ACK
+    case 'a':
+      uint32_t id;
+      uint32_t ts;
 
-    delay(100);
+      delay(100);
     
-    Serial.read();
-    ((char *)&id)[3] = (char)Serial.read();
-    ((char *)&id)[2] = (char)Serial.read();
-    ((char *)&id)[1] = (char)Serial.read();
-    ((char *)&id)[0] = (char)Serial.read();
-    ts = Serial.parseInt();
-    Serial.println("Sending ack with id=0x" + String(id,HEX) + " and ts=0x" +
-		   String(ts,HEX)+ "\r\n");
-    lm.testSendAck(id, ts);
-    break;
-  default:
-    while (Serial.available()) Serial.read();
+      Serial.read();
+      ((char *)&id)[3] = (char)Serial.read();
+      ((char *)&id)[2] = (char)Serial.read();
+      ((char *)&id)[1] = (char)Serial.read();
+      ((char *)&id)[0] = (char)Serial.read();
+      ts = Serial.parseInt();
+      Serial.println("Sending ack with id=0x" + String(id,HEX) + " and ts=0x" +
+		     String(ts,HEX)+ "\r\n");
+      lm.testSendAck(id, ts);
+      break;
+#endif
+    default:
+      while (Serial.available()) Serial.read();
+    }
+    Serial.println("'s' to send of a Data Sample packet\r\n"
+#ifdef TEST_SEND_ACK
+		 "'a <id> <ts>' to send Ack Packet\r\n"
+#endif
+		 );
   }
+#ifdef DUMP_RX_PACKET
+  lm.sniff();
+#endif  
 #else
   lm.loopAction();
 #endif  

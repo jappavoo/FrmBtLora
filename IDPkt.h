@@ -210,7 +210,7 @@ struct  FB2Srv1DataRecordPkt {
   const IDLoraCR_t IDLORACR  = 0x0D;
   const MsgType_t  MSGTYPEVAL = 0xA1;
   
-  union {
+  union DATA {
     uint8_t raw[sizeof(STX_t) +
 		sizeof(SerNoPkt_t) +
 		sizeof(MsgType_t) +
@@ -218,7 +218,7 @@ struct  FB2Srv1DataRecordPkt {
 		sizeof(SampleData_t) +
 		sizeof(ETX_t) +
 		sizeof(IDLoraCR_t)];
-    struct {
+    struct VALUES {
       STX_t           STX;
       SerNoPkt_t      SerNo;
       MsgType_t       MsgType;
@@ -230,11 +230,13 @@ struct  FB2Srv1DataRecordPkt {
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
 
-  inline __attribute__((always_inline)) FB2Srv1DataRecordPkt() {
+  inline __attribute__((always_inline)) void reset() {
     data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL;
     data.values.ETX=ETXVAL; data.values.IDLoraCR = IDLORACR;
     setValues();
   }
+  
+  inline __attribute__((always_inline)) FB2Srv1DataRecordPkt() { reset(); }
 
   inline __attribute__((always_inline)) void setTimeStamp(TimeStampHost_t ts=0)
   {
