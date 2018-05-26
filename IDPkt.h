@@ -56,8 +56,8 @@ typedef uint8_t IDLoraCR_t;
 //  Serial Number Field Values: 0x31 0x32 0x33 0x4A
 typedef uint32_t SerNoPkt_t;
 typedef uint32_t SerNoHost_t;
-SerNoPkt_t  SerNoHost2Pkt(const SerNoHost_t sn) { return Host32ToBE32(sn); }
-SerNoHost_t SerNoPkt2Host(const SerNoPkt_t sn)  { return BE32ToHost32(sn); }
+inline __attribute__((always_inline)) SerNoPkt_t SerNoHost2Pkt(const SerNoHost_t sn) { return Host32ToBE32(sn); }
+inline __attribute__((always_inline)) SerNoHost_t SerNoPkt2Host(const SerNoPkt_t sn)  { return BE32ToHost32(sn); }
 
 // 4.3.2 Timestamp Field
 //  4 byte (little endian) data field indicating timestamp of message. Example:
@@ -65,10 +65,12 @@ SerNoHost_t SerNoPkt2Host(const SerNoPkt_t sn)  { return BE32ToHost32(sn); }
 //  Timestamp Field Values: 0x02 0x00 0x00 0x00
 typedef uint32_t TimeStampPkt_t;
 typedef uint32_t TimeStampHost_t;
-TimeStampPkt_t  TimeStampHost2Pkt(const TimeStampHost_t ts) {
+inline __attribute__((always_inline)) TimeStampPkt_t
+TimeStampHost2Pkt(const TimeStampHost_t ts) {
   return Host32ToLE32(ts);
 }
-TimeStampHost_t TimeStampPkt2Host(const TimeStampPkt_t ts)  {
+inline __attribute__((always_inline)) TimeStampHost_t
+TimeStampPkt2Host(const TimeStampPkt_t ts)  {
   return LE32ToHost32(ts);
 }
 
@@ -80,10 +82,12 @@ TimeStampHost_t TimeStampPkt2Host(const TimeStampPkt_t ts)  {
 //                           0x00 0x00
 typedef uint16_t ADCValPkt_t;
 typedef uint16_t ADCValHost_t;
-ADCValPkt_t  ADCValHost2Pkt(const ADCValHost_t val) {
+inline __attribute__((always_inline)) ADCValPkt_t
+ADCValHost2Pkt(const ADCValHost_t val) {
   return Host16ToLE16(val);
 }
-ADCValHost_t ADCValPkt2Host(const ADCValPkt_t val)  {
+inline __attribute__((always_inline)) ADCValHost_t
+ADCValPkt2Host(const ADCValPkt_t val)  {
   return LE16ToHost16(val);
 }
 
@@ -109,10 +113,12 @@ typedef union {
 //  Sample Data Ack Interval Value Field = 0x58 0x02
 typedef uint16_t IntervalValuePkt_t;
 typedef uint16_t IntervalValueHost_t;
-IntervalValuePkt_t  IntervalValueHost2Pkt(const IntervalValueHost_t  iv) {
+inline __attribute__((always_inline)) IntervalValuePkt_t
+IntervalValueHost2Pkt(const IntervalValueHost_t  iv) {
   return Host16ToLE16(iv);
 }
-IntervalValueHost_t IntervalValuePkt2Host(const IntervalValuePkt_t iv)   {
+inline __attribute__((always_inline)) IntervalValueHost_t
+IntervalValuePkt2Host(const IntervalValuePkt_t iv)   {
   return LE16ToHost16(iv);
 }
 
@@ -145,30 +151,36 @@ IntervalValueHost_t IntervalValuePkt2Host(const IntervalValuePkt_t iv)   {
 //                                   0x00
 typedef uint16_t LORAResendCountPkt_t;
 typedef uint16_t LORAResendCountHost_t;
-LORAResendCountPkt_t  LORAResendCountHost2Pkt(const LORAResendCountHost_t rc) {
+inline __attribute__((always_inline)) LORAResendCountPkt_t
+LORAResendCountHost2Pkt(const LORAResendCountHost_t rc) {
   return Host16ToLE16(rc);
 }
-LORAResendCountHost_t LORAResendCountPkt2Host(const LORAResendCountPkt_t rc)  {
+inline __attribute__((always_inline)) LORAResendCountHost_t
+LORAResendCountPkt2Host(const LORAResendCountPkt_t rc)  {
   return LE16ToHost16(rc);
 }
 
 typedef uint16_t LORAWatchDogCountPkt_t;
 typedef uint16_t LORAWatchDogCountHost_t;
-LORAWatchDogCountPkt_t  LORAWatchDogCountHost2Pkt(const LORAWatchDogCountHost_t
+inline __attribute__((always_inline)) LORAWatchDogCountPkt_t
+LORAWatchDogCountHost2Pkt(const LORAWatchDogCountHost_t
 						  wdc) {
   return Host16ToLE16(wdc);
 }
-LORAWatchDogCountHost_t LORAWatchDogCountPkt2Host(const LORAWatchDogCountPkt_t
+inline __attribute__((always_inline)) LORAWatchDogCountHost_t
+LORAWatchDogCountPkt2Host(const LORAWatchDogCountPkt_t
 						  wdc) {
   return LE16ToHost16(wdc);
 }
 
 typedef uint16_t MaxMsgCountPkt_t;
 typedef uint16_t MaxMsgCountHost_t;
-MaxMsgCountPkt_t  MaxMsgCountHost2Pkt(const MaxMsgCountHost_t mmc)  {
+inline __attribute__((always_inline)) MaxMsgCountPkt_t
+MaxMsgCountHost2Pkt(const MaxMsgCountHost_t mmc)  {
   return Host16ToLE16(mmc);
 }
-MaxMsgCountHost_t MaxMsgCountPkt2Host(const MaxMsgCountPkt_t mmc) {
+inline __attribute__((always_inline)) MaxMsgCountHost_t
+MaxMsgCountPkt2Host(const MaxMsgCountPkt_t mmc) {
   return LE16ToHost16(mmc);
 }
 
@@ -218,9 +230,10 @@ struct  FB2Srv1DataRecordPkt {
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
 
-  inline FB2Srv1DataRecordPkt() {
+  inline __attribute__((always_inline)) FB2Srv1DataRecordPkt() {
     data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL;
     data.values.ETX=ETXVAL; data.values.IDLoraCR = IDLORACR;
+    setValues();
   }
 
   inline __attribute__((always_inline)) void setTimeStamp(TimeStampHost_t ts=0)
@@ -248,11 +261,11 @@ struct  FB2Srv1DataRecordPkt {
     data.values.Data.values.ADC7 = ADCValHost2Pkt(adc7);
   }
 
-  inline void setSerNo(SerNoHost_t sn) {
+  inline __attribute__((always_inline)) void setSerNo(SerNoHost_t sn) {
     data.values.SerNo = SerNoHost2Pkt(sn);
   }
 
-  inline int32_t getSerNo() {
+  inline __attribute__((always_inline)) int32_t getSerNo() {
     return SerNoPkt2Host(data.values.SerNo);
   }
   
@@ -381,14 +394,32 @@ struct Srv2FBAckAndConfigPkt {
       BoolPkt_t          TD;
       TimeStampPkt_t     TDVal;
       ETX_t              ETX;
-      IDLoraCR_t          IDLoraCR;
+      IDLoraCR_t         IDLoraCR;
     } __attribute__((packed)) values;
     static_assert(sizeof(raw) == sizeof(values), "Bad Sizes");
   } __attribute__((packed)) data;
+
+  inline __attribute__((always_inline)) bool isValid() {
+      return (data.values.STX == STXVAL &&
+	      data.values.MsgType == MSGTYPEVAL &&
+	      data.values.ETX == ETXVAL &&
+	      data.values.IDLoraCR == IDLORACR);
+  }
+
+  inline __attribute__((always_inline)) void setTimeStamp(TimeStampHost_t ts=0)
+  {
+        data.values.TimeStamp = TimeStampHost2Pkt(ts);
+  }
+
+  inline __attribute__((always_inline)) void setSerNo(SerNoHost_t sn) {
+    data.values.SerNo = SerNoHost2Pkt(sn);
+  }
   
   inline Srv2FBAckAndConfigPkt() {
-    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL; data.values.ETX=ETXVAL;
-    data.values.IDLoraCR = IDLORACR;
+    data.values.STX = STXVAL; data.values.MsgType = MSGTYPEVAL;
+    data.values.TimeStamp = 0; 
+    data.values.ETX=ETXVAL; data.values.IDLoraCR = IDLORACR;
+    
   }
 } __attribute__((packed));
 static_assert(sizeof(Srv2FBAckAndConfigPkt) <= ID_PKT_MAX_MSG_SIZE,

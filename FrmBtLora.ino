@@ -1,8 +1,12 @@
 // comment next line if you want to
 // play with indesign packet processing
 // rather than using it as lora sniffer
-#define SERIAL_INPUT_PROCESSING
+//#define SERIAL_INPUT_PROCESSING
+#define TEST_SEND_ACK
+#define DUMP_TX_PACKET
+#define DUMP_RX_PACKET
 #define LORA_INFO
+#define IND_ACK_TIMEOUT_MS 30000
 //#define DUMP_EEPROM
 #include "FarmBeatsLora.h"
 
@@ -13,7 +17,9 @@ namespace FarmBeats {
     void setup() {}
     uint32_t getTS()   {
       unsigned long ts=millis();
-      Serial.println("  sensors.getTS() = " + String(ts, HEX));
+      Serial.println("  sensors.getTS() = " +
+		     String(ts, DEC) + "(0x" +
+		     String(ts, HEX) + ")");
       return ts;
     }
     uint16_t getADC0() { return 0x0CCC; }
@@ -38,8 +44,10 @@ void setup() {
   Serial.println("  sizeof(lm)=" + String(sizeof(lm)));
 #ifdef INDESIGN_PACKET_PROCESSING  
   Serial.println("  sizeof(lm.theSample_)=" + String(sizeof(lm.theSample_)));
-  Serial.println("  sizeof(lm.theSample_.data.raw)=" + String(sizeof(lm.theSample_.data.raw)));
-  Serial.println("  sizeof(lm.theSample_.data.values)=" + String(sizeof(lm.theSample_.data.values)));
+  Serial.println("  sizeof(lm.theSample_.data.raw)=" +
+		 String(sizeof(lm.theSample_.data.raw)));
+  Serial.println("  sizeof(lm.theSample_.data.values)=" +
+		 String(sizeof(lm.theSample_.data.values)));
 #endif
   Serial.println("  sizeof(LoRa)=" + String(sizeof(LoRa)));
   Serial.println("  sizeof(id)=" + String(sizeof(id)));
@@ -80,20 +88,39 @@ void setup() {
 #endif
   
   waitForKey("setup(): END: Send key to end");
-#ifdef INDESIGN_PACKET_PROCESSING
-  Serial.println("Send a byte on serial line to trigger send of a packet");
-#endif
 }
 
 void loop() {
 #ifdef INDESIGN_PACKET_PROCESSING
+  Serial.println("'s' to send of a Data Sample packet\r\n" 
+		 "'a <id> <ts>' to send Ack Packet\r\n");
   while (!Serial.available());
-  while(Serial.available()) {
+  
+  switch (Serial.read()) {
+  case 's':
+    lm.sendSample(sensors.getTS(),
+		  sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
+		  sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
+    break;
+  case 'a':
+    uint32_t id;
+    uint32_t ts;
+
+    delay(100);
+    
     Serial.read();
+    ((char *)&id)[3] = (char)Serial.read();
+    ((char *)&id)[2] = (char)Serial.read();
+    ((char *)&id)[1] = (char)Serial.read();
+    ((char *)&id)[0] = (char)Serial.read();
+    ts = Serial.parseInt();
+    Serial.println("Sending ack with id=0x" + String(id,HEX) + " and ts=0x" +
+		   String(ts,HEX)+ "\r\n");
+    lm.testSendAck(id, ts);
+    break;
+  default:
+    while (Serial.available()) Serial.read();
   }
-  lm.sendSample(sensors.getTS(),
-		sensors.getADC0(), sensors.getADC1(), sensors.getADC2(),
-		sensors.getADC3(), sensors.getADC4(), sensors.getADC5());
 #else
   lm.loopAction();
 #endif  

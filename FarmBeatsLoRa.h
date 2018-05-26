@@ -60,7 +60,7 @@
 #include "LoRaMac-Node/src/radio/sx1276/sx1276Regs-LoRa.h"
 #include "FrmBtLoraPkt.h"
 
-#define VNUM "0.3.3"
+#define VNUM "0.4.0"
 // uncomment next line to turn on debug (see below for how to customize
 // the debug behaviour
 //#define DEBUG
@@ -79,6 +79,9 @@
 #else
 #define INDESIGN_PACKET_PROCESSING
 #define MODE "InDesignPkts"
+#ifndef IND_ACK_TIMEOUT_MS
+#define IND_ACK_TIMEOUT_MS 1000
+#endif
 #endif
 
 #ifdef RAW
@@ -172,7 +175,26 @@ int dumpHex(unsigned char *start, int bytes)
   return j;
 }
 
-#endif
+int readAndDumpHex(Stream &s, int bytes) {
+  int i;
+  int j;
+  for (j=0; j<bytes; ) {
+    if ((j%16) == 0) Serial.print("\t" + String(j,HEX) + ": ");
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      Serial.print(String(s.read(),HEX) + " ");
+    }
+    Serial.print("|");
+    for (i=0;(i<16) && ((j+i) < bytes);i++) {
+      char c=s.read();
+      if (c>=' ' && c<='~')  Serial.print(c);
+      else Serial.print(".");
+    }
+    Serial.print("|\r\n");
+    j+=i;
+  }
+  return j;
+}
+#endif // defined(DUMP_RX_PACKET) || defined(DUMP_TX_PACKET)
 
 
 
@@ -522,7 +544,6 @@ namespace FarmBeats {
 
 
   // Default send timing parameters
-  
   const int  LORA_RANDOM_SEND_DELAY_MS = 100;
   const int  LORAY_BASE_SEND_DELAY_MS  = 1000;
 
@@ -594,27 +615,30 @@ namespace FarmBeats {
   class LoraModule {
   private:
     // radio configuration parameters
-    const long     freq_               = LORA_FREQ;
-    const long     bandwidth_          = LORA_BANDWIDTH;
-    const long     preambleLength_     = LORA_PREAMBLE_LENGTH;
-    const int      spreadingFactor_    = LORA_SPREADING_FACTOR;
-    const int      txPower_            = LORA_TX_POWER_LEVEL;
-    const int      codingRateDenom_    = LORA_CODING_RATE_DENOM;
-    const int      syncWord_           = LORA_SYNC_WORD;
-    const bool     crc_                = LORA_CRC;
-    const bool     implicitHeaderMode_ = LORA_IMPLICIT_HEADER_MODE; 
+    const long     freq_                  = LORA_FREQ;
+    const long     bandwidth_             = LORA_BANDWIDTH;
+    const long     preambleLength_        = LORA_PREAMBLE_LENGTH;
+    const int      spreadingFactor_       = LORA_SPREADING_FACTOR;
+    const int      txPower_               = LORA_TX_POWER_LEVEL;
+    const int      codingRateDenom_       = LORA_CODING_RATE_DENOM;
+    const int      syncWord_              = LORA_SYNC_WORD;
+    const bool     crc_                   = LORA_CRC;
+    const bool     implicitHeaderMode_    = LORA_IMPLICIT_HEADER_MODE; 
 
     // pin/wiring parameters
-    static const int      pwrDisable_         = LORA_R_PWR_DISABLE;
-    static const int      reset_              = LORA_L_NRESET;
-    static const int      ss_                 = LORA_L_SS;
-    static const int      dio0_               = LORA_R_DI00;
+    static const int      pwrDisable_     = LORA_R_PWR_DISABLE;
+    static const int      reset_          = LORA_L_NRESET;
+    static const int      ss_             = LORA_L_SS;
+    static const int      dio0_           = LORA_R_DI00;
 
     // send timing parameters
-    const int      baseSendDelay_      = LORAY_BASE_SEND_DELAY_MS;
-    const int      randomSendDelay_    = LORA_RANDOM_SEND_DELAY_MS;
+    const unsigned long  baseSendDelay_   = LORAY_BASE_SEND_DELAY_MS;
+    const unsigned long  randomSendDelay_ = LORA_RANDOM_SEND_DELAY_MS;
 
-
+#ifdef INDESIGN_PACKET_PROCESSING
+    const unsigned long  ackTimeout_      = IND_ACK_TIMEOUT_MS;
+#endif
+    
 #ifdef SERIAL_INPUT_PROCESSING   
     class SerialBuffer {
 #define INPUT_STREAM_BUFFER_SIZE 20
@@ -651,7 +675,8 @@ namespace FarmBeats {
 
   public:
 #ifdef INDESIGN_PACKET_PROCESSING
-    FB2Srv1DataRecordPkt theSample_;
+    FB2Srv1DataRecordPkt  theSample_;
+    Srv2FBAckAndConfigPkt theSampleAck_;
 #else
     unsigned char pktBuffer[LoRaUtils::MAX_PKT_SIZE];
 #endif
@@ -737,39 +762,164 @@ namespace FarmBeats {
 #endif
 
 #ifdef INDESIGN_PACKET_PROCESSING
+
+#ifdef TEST_SEND_ACK
+    public:
+      void testSendAck(uint32_t id, uint32_t ts) {
+	theSampleAck_.setSerNo(id);
+	theSampleAck_.setTimeStamp(ts);
+	theLoRa.beginPacket(implicitHeaderMode_);
+#ifndef RAW
+	theLoRa.write(FB_LORA_MHDR.raw);
+#endif  // RAW
+	theLoRa.write(theSampleAck_.data.raw, sizeof(theSampleAck_.data.raw));
+	theLoRa.endPacket();	
+	lastTx_ = millis();
+	nextTxAfter_ = txDelay();
+
+#ifdef DUMP_TX_PACKET
+      Serial.print(">" +
+		   String(sizeof(theSampleAck_.data.raw)
+#ifndef RAW
+				 + sizeof(FB_LORA_MHDR.raw)
+#endif	// RAW				  
+			  ) + "\r\n");
+#ifndef RAW
+      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX)
+		   + "\r\n");
+#endif  // RAW
+      dumpHex(theSampleAck_.data.raw, sizeof(theSampleAck_.data.raw));
+#endif  // DUMP_TX_PACKET
+      }
+    private:
+#endif  // TEST_SEND_ACK
+      
     void sendSampleData() {
-      waitForKey("Press key to send sample", true, true);
-            
       theLoRa.beginPacket(implicitHeaderMode_);
 #ifndef RAW
       theLoRa.write(FB_LORA_MHDR.raw);
-#endif
+#endif  // RAW
       theLoRa.write(theSample_.data.raw, sizeof(theSample_.data.raw));
       theLoRa.endPacket();
 
       lastTx_ = millis();
       nextTxAfter_ = txDelay();
-      
+
 #ifdef DUMP_TX_PACKET
-      Serial.print(">" +
-		   String(sizeof(theSample_.data.raw
+      Serial.print("> " +
+		   String(sizeof(theSample_.data.raw)
 #ifndef RAW
 				 + sizeof(FB_LORA_MHDR.raw)
 #endif	// RAW				  
-				 ))
-		   +"\r\n");
+			  ) + "\r\n");
 #ifndef RAW
-      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX)
-		   + "\r\n");
+      Serial.print("LoRa v1.1 PHYHDR: " + String(FB_LORA_MHDR.raw, HEX) + "\r\n");
 #endif  // RAW
       dumpHex(theSample_.data.raw, sizeof(theSample_.data.raw));
 #endif  // DUMP_TX_PACKET
+
+      return;      
+    }
+
+    // The recorded Ack is considered valid if it meets all the requirements
+    // for a valid ack and the ack is for us (serno matches our sample) and
+    // the ack's timestamp is the same as the timestamp on the sample we sent
+    // Compares are done in packet endianess.
+  public:
+    bool isSampleAcked() {
+      return theSampleAck_.isValid() &&
+	theSample_.data.values.SerNo == theSampleAck_.data.values.SerNo &&
+	theSample_.data.values.TimeStamp == theSampleAck_.data.values.TimeStamp;	
+    }
+  private:
+    
+#ifdef DUMP_RX_PACKET
+    void dumpRxAckPacket(int packetLen, union LORA_PHY_MHDR phyhdr = {.raw = 0 }) {
+      UNUSED(phyhdr);
+      Serial.print("\r\n:< " + String(packetLen) + "rssi:" +
+		   String(theLoRa.packetRssi())+ "(" +
+		   String(LoRaUtils::getRssiPktValue()) + ") snr:" +
+		   String(theLoRa.packetSnr()) + "("
+		   + String(LoRaUtils::getSnrPktValue()) + ")\r\n\t");
+      if (isSampleAcked()) Serial.print("\t * ACK GOOD *\r\n");
+      else Serial.print("\t * ACK BAD *\r\n");
+#ifndef RAW
+      Serial.print("LoRa v1.1 PHYHDR: " + String(phyhdr.raw, HEX) + "\r\n");
+#endif  // RAW
+      dumpHex(theSampleAck_.data.raw, sizeof(theSampleAck_.data.raw));
+    }
+    
+    void dumpRxFifoPacket(int packetLen) {
+      // packet waa aready dumped if it was the right size so just dump
+      // what's in the radio's fifo
+      Serial.print("\r\n:<" +
+		   String(packetLen) + "rssi:" +
+		   String(theLoRa.packetRssi())+ "(" +
+		   String(LoRaUtils::getRssiPktValue()) + ") snr:" +
+		   String(theLoRa.packetSnr()) + "("
+		   + String(LoRaUtils::getSnrPktValue()) + ")\r\n\t");
+      readAndDumpHex(theLoRa, packetLen);
+    }
+#endif  // DUMP_RX_PACKET
+
+    // busy poll of lora for ack this could be substantially optimized
+    void receiveAck() {
+      // JA: FIXME might want to put the radio into continous receive mode
+      //     But I think for this to be effective we must use the callback
+      //     interface of the LoRa code
+      //  theLoRa.receive();
+#ifdef DUMP_RX_PACKET
+      Serial.print("[\r\n");
+#endif
+      // we will listen ack_timeout_ms
+      while ((millis() - lastTx_) < ackTimeout_) {
+	// poll lora (local should optimize away)
+	const int packetLen = theLoRa.parsePacket();  
+ 	if (packetLen == (sizeof(theSampleAck_.data.raw)
+#ifndef RAW
+			  + sizeof(FB_LORA_MHDR.raw)
+#endif
+			  )) {
+	  // got something that is the correct size of an ACK
+#ifndef RAW
+	  // if we are using lora headers read it and verify
+	  const union LORA_PHY_MHDR phyhdr = theLoRa.read();
+	  //  JA: FIXME for the moment we are simply eating the phys hdr byte and not
+	  //      actually checking that is valid following commented code should
+	  //      implement the check but turned off for the moment
+	  //NOTE: we don't match on reserved incase we use these bits
+	  //if (phyhdr.bits.MajorType == FB_LORA_MHDR.MajorType &&
+	  //    phyhdr.bits.MsgType == FB_LORA_MHDR.MsgType)
+#endif   // warning no parenthesis next line is condition on the optional if
+	  for (unsigned int i=0; i<sizeof(theSampleAck_.data.raw); i++) {
+	    // copy it into our ack buffer
+	    theSampleAck_.data.raw[i] = theLoRa.read();
+	  }
+#ifdef DUMP_RX_PACKET
+	  dumpRxAckPacket(packetLen
+#ifndef RAW
+			  , phyhdr
+#endif
+			  );
+#endif
+	  if (isSampleAcked()) break;  // got the ack we were looking for we are done
+	  // else got an ack but it was not the one we were looking for keep listening
+	}
+#ifdef DUMP_RX_PACKET
+	else if (packetLen) dumpRxFifoPacket(packetLen);
+#endif
+      }    
+      // we are done receiving so put radio to sleep as soon as we can
+      theLoRa.sleep();
+#ifdef DUMP_RX_PACKET
+      Serial.print("]\r\n");
+#endif
     }
 #endif // INDESIGN_PACKET_PROCESSING
-    
-    void onReceive(int packetSize) {
-      if (packetSize == 0) return;
+
 #ifdef SERIAL_INPUT_PROCESSING 
+    void onReceiveSerial(int packetSize) {
+      if (packetSize == 0) return;
       String inStr = "";
       int n=0;
       
@@ -804,9 +954,9 @@ namespace FarmBeats {
 	  Serial.write(&pktBuffer[payloadIdx],packetSize-payloadIdx);
 	}
       }
-#endif
     }
-
+#endif
+    
   public:
     LoraModule() {}
 
@@ -870,24 +1020,32 @@ namespace FarmBeats {
 #ifdef SERIAL_INPUT_PROCESSING
       // local input stream processing
       serialBuf_.buffer();
-#endif   
       // send data when and as necessary
       if ((millis() - lastTx_) > nextTxAfter_) {
         // time to send any buffered data
-#ifdef SERIAL_INPUT_PROCESSING
         sendStreamBuf();
-#endif
-#ifdef INDESIGN_PACKET_PROCESSING
-	sendSampleData();
-#endif	
       }
+      // poll and process any data on theLoRa
+      onReceiveSerial(theLoRa.parsePacket());
+#endif
+    
+#ifdef INDESIGN_PACKET_PROCESSING
+      // JA:  IMPORTANT
+      // This logic will forceably send theSample data and listen for an ack
+      // Caller is responsible for testing critera for sending and calling
+      // loopAction only when they really mean too!  Eg.
+      //   1) New data has been recorded
+      //   2) Sample data has not been acked
+      if ((millis() - lastTx_) > nextTxAfter_) {
+	  sendSampleData();
+	  // try and receive an ack for the sample sent
+	  receiveAck();
+      }
+#endif	
 
 #ifdef LORA_STATS
       LoRaUtils::dumpStats();
-#endif
-      
-      // poll and process any data on theLoRa
-      onReceive(theLoRa.parsePacket());
+#endif      
     }
 
 #ifdef INDESIGN_PACKET_PROCESSING

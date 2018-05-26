@@ -146,6 +146,7 @@ if [[ $cmd == upload ]]; then
 	echo "ERROR: can't find build/$hex.  Try first getting a clean compile ;-)"
 	exit -1
     fi
+    
     $toolsToolChain/bin/avrdude \
 	 -C${toolsToolChain}/etc/avrdude.conf \
 	 -v \
