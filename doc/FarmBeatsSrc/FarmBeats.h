@@ -40,7 +40,7 @@ void checkNHandleBTIncoming();
 void goSleep();
 
 #ifdef WITH_LORA
-void handleLora();
+bool handleLora();
 String _adcSense(byte _adcPin, uint16_t &rval);
 #else
 String _adcSense(byte _adcPin);

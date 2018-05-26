@@ -77,12 +77,12 @@ void handleBT()
 }
 
 #ifdef WITH_LORA
-void handleLora()
+bool handleLora()
 {
-  // JA KLUDGE TEST: set 
+  // JA KLUDGE TEST: force a lora action other 
   _senseLocalTime = millis();
   
-    if (_senseLocalTime != lm.theSample_.getTimeStamp() ) {
+  if (_senseLocalTime != lm.theSample_.getTimeStamp() || !lm.isSampleAcked() ) {
       lm.theSample_.setTimeStamp(_senseLocalTime);
       lm.start();
 	  
@@ -90,7 +90,9 @@ void handleLora()
 //    lm.sendSample(millis(),
 //		    0x0CCC, 0x0100, 0x0456, 0xCAFE, 0xFEED, 0xFACE);
       lm.stop();
+      if (lm.isSampleAcked()) return true;
     }
+  return false;
 }
 #endif
 
@@ -399,10 +401,13 @@ String sense(boolean _sigSave)
 	
 	//soil moisture sense
 	triggerSensor(ADC01TRIGGER, true);
+
+#ifdef WITH_LORA
 	// JA: KLUDGE OPTIMIZATION :  We know endianess matches
 	// so we by pass functional interface
-	//  Add static assert to verify this fact at compile time
-#ifdef WITH_LORA
+	// would like the following FIXME
+	//	static_assert(0xface == ADCValHost2Pkt(0xface), "Endianess of host and packet format for ADC Values does not match.  Bad optimization");
+	
 	dataString+= _adcSense(A0, lm.theSample_.data.values.Data.values.ADC0);
 #else
 	dataString+= _adcSense(A0);

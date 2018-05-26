@@ -49,7 +49,8 @@ void loop() {
       _count = 0;
     }
 #ifdef WITH_LORA
-  handleLora();
+  if (handleLora()) Serial.println("1");
+  else Serial.println("0");
 #endif
   goSleep();
 }
