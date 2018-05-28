@@ -97,7 +97,7 @@ hexdump(unsigned char *start, int bytes)
   int j;
   int i;
   for (j=0; j<bytes; ) {
-    if ((j%16) == 0) printf("\t%x: ", j);
+    if ((j%16) == 0) dbgSerial.printf("\t%x: ", j);
     for (i=0;(i<16) && ((j+i) < bytes);i++) {
       dbgSerial.printf("%x ", start[j+i]);
     }
@@ -156,7 +156,6 @@ int main()
     int txCnt=0;
     int rxCnt=0;
 
-    int myId=0;    
     int msNextSend=1000;
     Timer tmr;
     
@@ -172,7 +171,7 @@ int main()
 #ifdef DUMP_PACKETS            
             /* dump received data */
             if (dump) {
-              dbgSerial.printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId,  
+              dbgSerial.printf("<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n",   
                      lora.RegRxNbBytes, rxCnt, 
                      lora.get_pkt_rssi(), lora.RegPktRssiValue, 
                      lora.RegPktSnrValue * 0.25, lora.RegPktSnrValue);
@@ -214,7 +213,7 @@ int main()
 #ifdef DUMP_PACKETS            
             /* dump sent data */
             if (dump) { 
-              dbgSerial.printf("%d:>%d[%d]\r\n", myId, lora.RegPayloadLength, txCnt);
+              dbgSerial.printf(">%d[%d]\r\n", lora.RegPayloadLength, txCnt);
               hexdump(radio.tx_buf, lora.RegPayloadLength);
             }
 #endif            
