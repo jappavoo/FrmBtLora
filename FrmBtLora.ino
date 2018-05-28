@@ -6,7 +6,7 @@
 #define DUMP_TX_PACKET
 #define DUMP_RX_PACKET
 #define LORA_INFO
-#define IND_ACK_TIMEOUT_MS 30000
+#define IND_ACK_TIMEOUT_MS 10000
 #define AUTO_ACK
 //#define DUMP_EEPROM
 #include "FarmBeatsLora.h"

@@ -3,4 +3,4 @@
 	url = https://github.com/Lora-net/LoRaMac-node.git
 [submodule "libraries/LoRa"]
 	path = libraries/LoRa
-	url = https://github.com/jappavoo/arduino-LoRa
+	url = https://github.com/sandeepmistry/arduino-LoRa.git
