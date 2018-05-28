@@ -1,6 +1,5 @@
 #include "sx127x_lora.h"
 
-#define RAW
 #define DUMP_PACKETS
 //                mosi,      miso,     sclk,       cs,        rst,      dio0,      dio1
 // SX127x(PinName dio0, PinName dio_1, PinNa>me cs, SPI&, PinName rst);
@@ -12,14 +11,19 @@ SX127x_lora lora(radio);
 DigitalOut txctl(LORA_TXCTL);
 DigitalOut rxctl(LORA_RXCTL);
 
+Serial dbgSerial(USBTX, USBRX);
+
 class MySerial : public Serial {
     public:
     void  handleWrite(char *buf, int len) {
        int i=0;
-       while(i != len) {
-        if (writeable()) {
- //           attach(NULL, Serial::RxIrq);
-            putc(buf[i]); i++;
+       //dbgSerial.printf("\r\nhandleWrite(buf=0x%p, len=%d)\r\n", buf, len);
+       while (i<len)  {
+        if (Serial::writeable()) {
+            //attach(NULL, Serial::RxIrq);
+            putc(buf[i]); 
+            i++;
+            //dbgSerial.printf("%d ",i);
             //attach(this, &ATSerial::handleRead, Serial::RxIrq);
         }
        }
@@ -27,7 +31,6 @@ class MySerial : public Serial {
      MySerial(PinName tx, PinName rx) : Serial(tx,rx) {}
 };
 
-Serial dbgSerial(USBTX, USBRX);
 MySerial dataSerial(SERIAL_TX, SERIAL_RX);
 
 void rfsw_callback()
@@ -43,12 +46,6 @@ void rfsw_callback()
 }
 
 /**********************************************************************/
-
-char waitForKey(char *msg) 
-{
-    dbgSerial.printf("%s : \r\n\t Press any key to continue\r\n", msg);
-    return getchar();
-}
 
 long sx1272_bandwidth(uint8_t bits) 
 {
@@ -118,12 +115,16 @@ hexdump(unsigned char *start, int bytes)
 
 event_callback_t cb;
 
+#ifdef DUMP_PACKETS
+int dump = 0;
+#endif
+
 int main()
 {    
     dbgSerial.baud(115200);
     dataSerial.baud(115200);
        
-    dbgSerial.printf("\r\nFrmBtmDot 0.2.14 raw no dump\r\n");
+    dbgSerial.printf("\r\nFrmBtmDot 0.3.0 raw with dump\r\n");
     
     radio.rf_switch.attach(rfsw_callback);
     
@@ -144,14 +145,17 @@ int main()
                    
     info();
     
-  
-    char buf[20];
+#ifdef DUMP_PACKETS
+    dbgSerial.printf("press 'd' to toggle dumping of packets "
+     "(DUMP OFF)\r\n");   
+#endif 
+
+    const int buflen=128;
+    char buf[buflen];
     int idx=0;
     int txCnt=0;
     int rxCnt=0;
-#ifndef RAW    
-    char hdr[80];
-#endif
+
     int myId=0;    
     int msNextSend=1000;
     Timer tmr;
@@ -164,9 +168,10 @@ int main()
          
          if (lora.service() == SERVICE_READ_FIFO) {
             rxCnt += lora.RegRxNbBytes;
+            dataSerial.handleWrite((char *)radio.rx_buf, lora.RegRxNbBytes);
 #ifdef DUMP_PACKETS            
-            /* dump sent data */
-            {
+            /* dump received data */
+            if (dump) {
               dbgSerial.printf("%d:<%d[%d] rssi:%d(%d) snr:%.f(%d)\r\n", myId,  
                      lora.RegRxNbBytes, rxCnt, 
                      lora.get_pkt_rssi(), lora.RegPktRssiValue, 
@@ -174,44 +179,28 @@ int main()
               hexdump((unsigned char *)radio.rx_buf, lora.RegRxNbBytes);
             } 
 #endif            
-            {
-               char *pktBuffer=(char *)radio.rx_buf;
-               int packetSize = lora.RegRxNbBytes;
-               int payloadIdx=0;
-#ifndef RAW              
-               // skip header
-               for (int i=0; i<2; i++) {
-                 while (pktBuffer[payloadIdx]!=',' && payloadIdx < packetSize) { payloadIdx++;}
-                 payloadIdx++;
-               }
-#endif               
-               if (payloadIdx < packetSize) {
-                 dataSerial.handleWrite(&pktBuffer[payloadIdx],(packetSize-payloadIdx));
-               }
-            }
         }
         
         if (dataSerial.readable()) {
-            buf[idx]=dataSerial.getc();
-            idx++;
+            // copy to buffer if there is space
+            if (idx < buflen) {
+                buf[idx]=dataSerial.getc();
+                idx++;
+            } else {
+                dbgSerial.printf("WARNING: Serial Data avaiable but buffer"
+                " full\n");
+            }
         }
         
         if (idx && (tmr.read_ms() >= msNextSend)) {
-#ifndef RAW   
-          int hb = snprintf(hdr, sizeof(hdr), "%d,%d,", myId, idx);
-          int n = hb + idx;
-#else
           int n = idx;
-#endif                    
+                
           if (n<=sizeof(radio.tx_buf)) {
             lora.RegPayloadLength = n;
             radio.write_reg(REG_LR_PAYLOADLENGTH, lora.RegPayloadLength);
-#ifndef RAW 
-            memcpy(radio.tx_buf, hdr, hb);
-            memcpy(&radio.tx_buf[hb], buf, idx);
-#else
+
             memcpy(radio.tx_buf, buf, idx);
-#endif                        
+                       
             /* begin transmission */    
             lora.start_tx(lora.RegPayloadLength);   
         
@@ -224,7 +213,7 @@ int main()
             txCnt += lora.RegPayloadLength;
 #ifdef DUMP_PACKETS            
             /* dump sent data */
-            { 
+            if (dump) { 
               dbgSerial.printf("%d:>%d[%d]\r\n", myId, lora.RegPayloadLength, txCnt);
               hexdump(radio.tx_buf, lora.RegPayloadLength);
             }
@@ -235,7 +224,19 @@ int main()
           }
        }
        
-      
+#ifdef DUMP_PACKETS  
+      if (dbgSerial.readable()) {
+          char c=dbgSerial.getc();
+          if (c=='d') { 
+            if (dump) {
+              dump=0; 
+              dbgSerial.printf("DUMP OFF\r\n");
+            } else {
+              dump=1;
+              dbgSerial.printf("DUMP ON\r\n");
+            }  
+         }
+      }
+#endif      
     }
 }
-
